@@ -147,7 +147,7 @@ class _HomeContent extends StatelessWidget {
             color: AppTheme.brandGreen,
             icon: CupertinoIcons.plus_circled,
             title: 'View Documents',
-            subtitle: 'View all Official Documents Issued to you',
+            subtitle: 'View all official documents issued to you',
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const CategoriesListPage()),
@@ -159,7 +159,7 @@ class _HomeContent extends StatelessWidget {
             color: AppTheme.brandBlue,
             icon: CupertinoIcons.qrcode_viewfinder,
             title: 'Scan QR Code',
-            subtitle: 'Use your camera to start document sharing',
+            subtitle: 'Use your camera',
             onTap: () {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Scan QR not implemented')),
@@ -252,9 +252,9 @@ class _IdentityHeaderCard extends StatelessWidget {
                 const SizedBox(height: AppTheme.gL),
                 Row(
                   children: const [
-                    Expanded(child: _StatPill(label: 'Signature', value: '4', icon: CupertinoIcons.doc_text_fill)),
+                    Expanded(child: _StatPill(label: 'Signature', value: '0', icon: CupertinoIcons.doc_text_fill)),
                     SizedBox(width: AppTheme.gL),
-                    Expanded(child: _StatPill(label: 'Documents', value: '12', icon: CupertinoIcons.doc_on_doc_fill)),
+                    Expanded(child: _StatPill(label: 'Documents', value: '3', icon: CupertinoIcons.doc_on_doc_fill)),
                   ],
                 ),
                 const SizedBox(height: AppTheme.gL),
