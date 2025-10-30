@@ -1,79 +1,176 @@
-// lib/features/home/presentation/home_page.dart
 import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-
-// adjust paths if your folders differ
 import '../../../app/theme.dart';
-import '../../../core/identity/identity.dart';
-import '../../documents/presentation/documents_list_page.dart';
+import '../../categories/presentation/categories_list_page.dart';
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  int _index = 0;
 
   @override
   Widget build(BuildContext context) {
+    final pages = const [
+      _HomeContent(),
+      Center(child: Text('Payments')),
+      Center(child: Text('History')),
+      Center(child: Text('Profile')),
+    ];
+
     return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        title: Text(IdentityContext.current.name),
-      ),
+      backgroundColor: const Color(0xFF0B1E34),
+      extendBody: true,
       body: Stack(
         children: [
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                colors: [AppTheme.bgTop, AppTheme.bgMid, AppTheme.bgBottom],
-              ),
-            ),
+          const _BackgroundGradient(),
+          SafeArea(child: IndexedStack(index: _index, children: pages)),
+        ],
+      ),
+
+      // --- Native M3 NavigationBar with square gold icon highlight, Home only clickable ---
+      bottomNavigationBar: NavigationBarTheme(
+        data: NavigationBarThemeData(
+          // Turn off the default wide pill so we can show our own square highlight
+          indicatorColor: Colors.transparent,
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+          backgroundColor: Colors.black.withOpacity(0.55),
+          labelTextStyle: WidgetStateProperty.all(
+            const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12),
           ),
-          SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(AppTheme.gL),
-              child: Column(
-                children: [
-                  const _IdentityHeaderCard(),
-                  const SizedBox(height: AppTheme.gXL),
-
-                  // Add Documents → goes to documents list (mock/api behind repo)
-                  _ActionTile(
-                    color: AppTheme.brandGreen,
-                    icon: CupertinoIcons.plus_circled,
-                    title: 'Add Documents',
-                    subtitle: 'Request official documents from an issuer',
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const DocumentsListPage()),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: AppTheme.gL),
-
-                  // Scan QR → stub for now
-                  _ActionTile(
-                    color: AppTheme.brandBlue,
-                    icon: CupertinoIcons.qrcode_viewfinder,
-                    title: 'Scan QR Code',
-                    subtitle: 'Use your camera to start document sharing',
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Scan QR (to be implemented)')),
-                      );
-                    },
-                  ),
-                ],
-              ),
+          iconTheme: WidgetStateProperty.resolveWith((states) {
+            final isSelected = states.contains(WidgetState.selected);
+            return IconThemeData(color: isSelected ? Colors.white : Colors.white.withOpacity(0.85));
+          }),
+        ),
+        child: NavigationBar(
+          height: 70,
+          elevation: 0,
+          selectedIndex: _index,
+          onDestinationSelected: (i) {
+            if (i == 0) {
+              setState(() => _index = 0);
+            } else {
+              // Do nothing (disabled). Optional toast:
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Coming soon')),
+              );
+            }
+          },
+          destinations: [
+            NavigationDestination(
+              // Normal icon when not selected
+              icon: const Icon(CupertinoIcons.house_fill),
+              // Square gold background when selected
+              selectedIcon: _GoldSquareIcon(child: const Icon(CupertinoIcons.house_fill, color: Colors.white, size: 22)),
+              label: 'Home',
             ),
+            const NavigationDestination(
+              icon: Icon(CupertinoIcons.creditcard),
+              selectedIcon: Icon(CupertinoIcons.creditcard),
+              label: 'Payments',
+            ),
+            const NavigationDestination(
+              icon: Icon(CupertinoIcons.clock),
+              selectedIcon: Icon(CupertinoIcons.clock),
+              label: 'History',
+            ),
+            const NavigationDestination(
+              icon: Icon(CupertinoIcons.person_fill),
+              selectedIcon: Icon(CupertinoIcons.person_fill),
+              label: 'Profile',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GoldSquareIcon extends StatelessWidget {
+  final Widget child;
+  const _GoldSquareIcon({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 36, // square
+      height: 36,
+      decoration: BoxDecoration(
+        color: AppTheme.gold,
+        borderRadius: BorderRadius.circular(8), // square (not a wide pill)
+      ),
+      alignment: Alignment.center,
+      child: child,
+    );
+  }
+}
+
+class _BackgroundGradient extends StatelessWidget {
+  const _BackgroundGradient();
+  @override
+  Widget build(BuildContext context) {
+    return const DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color(0xFF0B1E34),
+            Color(0xFF172C47),
+            Color(0xFF214263),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// ===== HOME CONTENT =====
+class _HomeContent extends StatelessWidget {
+  const _HomeContent();
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPad = MediaQuery.of(context).padding.bottom;
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(AppTheme.gL, AppTheme.gL, AppTheme.gL, 110 + bottomPad),
+      child: Column(
+        children: [
+          const _IdentityHeaderCard(),
+          const SizedBox(height: AppTheme.gXL),
+          _ActionTile(
+            color: AppTheme.brandGreen,
+            icon: CupertinoIcons.plus_circled,
+            title: 'View Documents',
+            subtitle: 'View all Official Documents Issued to you',
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const CategoriesListPage()),
+              );
+            },
+          ),
+          const SizedBox(height: AppTheme.gL),
+          _ActionTile(
+            color: AppTheme.brandBlue,
+            icon: CupertinoIcons.qrcode_viewfinder,
+            title: 'Scan QR Code',
+            subtitle: 'Use your camera to start document sharing',
+            onTap: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Scan QR not implemented')),
+              );
+            },
           ),
         ],
       ),
     );
   }
 }
-
-/// ====== UI bits (compact, matches your screenshot style) ======
 
 class _IdentityHeaderCard extends StatelessWidget {
   const _IdentityHeaderCard();
@@ -96,6 +193,7 @@ class _IdentityHeaderCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(AppTheme.rL),
             ),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -110,11 +208,11 @@ class _IdentityHeaderCard extends StatelessWidget {
                         Positioned(
                           right: -2, bottom: -2,
                           child: Container(
+                            padding: const EdgeInsets.all(4),
                             decoration: BoxDecoration(
                               color: AppTheme.brandGreen, shape: BoxShape.circle,
                               border: Border.all(color: Colors.black.withOpacity(.2)),
                             ),
-                            padding: const EdgeInsets.all(4),
                             child: const Icon(CupertinoIcons.check_mark, size: 14, color: Colors.white),
                           ),
                         ),
@@ -141,16 +239,15 @@ class _IdentityHeaderCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: AppTheme.gM),
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('MOHAMMAD ALI', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: .6)),
-                      SizedBox(height: 6),
-                      _VerifiedRow(),
-                    ],
-                  ),
+                const Text('MOHAMMAD ALI',
+                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: .6)),
+                const SizedBox(height: 6),
+                Row(
+                  children: const [
+                    Icon(CupertinoIcons.checkmark_seal_fill, size: 16, color: AppTheme.brandGreen),
+                    SizedBox(width: 6),
+                    Text('Verified Account', style: TextStyle(fontWeight: FontWeight.w600)),
+                  ],
                 ),
                 const SizedBox(height: AppTheme.gL),
                 Row(
@@ -163,9 +260,21 @@ class _IdentityHeaderCard extends StatelessWidget {
                 const SizedBox(height: AppTheme.gL),
                 Row(
                   children: const [
-                    Expanded(child: _PrimaryButton(label: 'Sign\nDocuments', color: AppTheme.gold, icon: CupertinoIcons.pencil_ellipsis_rectangle)),
+                    Expanded(
+                      child: _PrimaryButton(
+                        label: 'Sign\nDocuments',
+                        color: AppTheme.gold,
+                        icon: CupertinoIcons.pencil_ellipsis_rectangle,
+                      ),
+                    ),
                     SizedBox(width: AppTheme.gL),
-                    Expanded(child: _PrimaryButton(label: 'Verify\nSignature', color: AppTheme.brandBlue, icon: CupertinoIcons.shield_fill)),
+                    Expanded(
+                      child: _PrimaryButton(
+                        label: 'Verify\nSignature',
+                        color: AppTheme.brandBlue,
+                        icon: CupertinoIcons.shield_fill,
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -177,45 +286,38 @@ class _IdentityHeaderCard extends StatelessWidget {
   }
 }
 
-class _VerifiedRow extends StatelessWidget {
-  const _VerifiedRow();
-  @override
-  Widget build(BuildContext context) => Row(
-    children: const [
-      Icon(CupertinoIcons.checkmark_seal_fill, size: 16, color: AppTheme.brandGreen),
-      SizedBox(width: 6),
-      Text('Verified Account', style: TextStyle(fontWeight: FontWeight.w600)),
-    ],
-  );
-}
-
 class _StatPill extends StatelessWidget {
   final String label, value;
   final IconData icon;
   const _StatPill({super.key, required this.label, required this.value, required this.icon});
+
   @override
-  Widget build(BuildContext context) => Container(
-    height: 66,
-    decoration: BoxDecoration(
-      color: Colors.white.withOpacity(.06),
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: Colors.white.withOpacity(.08)),
-    ),
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-    child: Row(
-      children: [
-        Icon(icon, size: 22, color: Colors.white70),
-        const SizedBox(width: 10),
-        Column(
-          mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-            Text(label, style: TextStyle(color: Colors.white.withOpacity(.85), fontSize: 12, fontWeight: FontWeight.w500)),
-          ],
-        ),
-      ],
-    ),
-  );
+  Widget build(BuildContext context) {
+    return Container(
+      height: 66,
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.06),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(.08)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Row(
+        children: [
+          Icon(icon, size: 22, color: Colors.white70),
+          const SizedBox(width: 10),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+              Text(label,
+                  style: TextStyle(color: Colors.white.withOpacity(.85), fontSize: 12, fontWeight: FontWeight.w500)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _PrimaryButton extends StatelessWidget {
@@ -223,23 +325,30 @@ class _PrimaryButton extends StatelessWidget {
   final Color color;
   final IconData icon;
   const _PrimaryButton({super.key, required this.label, required this.color, required this.icon});
+
   @override
-  Widget build(BuildContext context) => Container(
-    height: 88,
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: color.withOpacity(.95),
-      borderRadius: BorderRadius.circular(20),
-      boxShadow: [BoxShadow(color: color.withOpacity(.35), blurRadius: 18, offset: const Offset(0, 8))],
-    ),
-    child: Row(
-      children: [
-        Icon(icon, size: 26, color: Colors.white),
-        const SizedBox(width: 10),
-        Flexible(child: Text(label, maxLines: 2, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800))),
-      ],
-    ),
-  );
+  Widget build(BuildContext context) {
+    return Container(
+      height: 88,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withOpacity(.95),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: color.withOpacity(.35), blurRadius: 18, offset: const Offset(0, 8))],
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 26, color: Colors.white),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text(label,
+                maxLines: 2,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ActionTile extends StatelessWidget {
@@ -257,41 +366,50 @@ class _ActionTile extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) => Container(
-    height: 84,
-    decoration: BoxDecoration(
-      color: Colors.white.withOpacity(.06),
-      borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: Colors.white.withOpacity(.08)),
-    ),
-    child: InkWell(
-      borderRadius: BorderRadius.circular(20),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        child: Row(
-          children: [
-            Container(
-              width: 44, height: 44,
-              decoration: BoxDecoration(color: color.withOpacity(.9), borderRadius: BorderRadius.circular(12)),
-              child: Icon(icon, color: Colors.white, size: 24),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 2),
-                  Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: Colors.white.withOpacity(.85), fontSize: 13, fontWeight: FontWeight.w500)),
-                ],
+  Widget build(BuildContext context) {
+    return Container(
+      height: 84,
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.06),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(.08)),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(color: color.withOpacity(.9), borderRadius: BorderRadius.circular(12)),
+                child: Icon(icon, color: Colors.white, size: 24),
               ),
-            ),
-            const Icon(CupertinoIcons.chevron_right, color: Colors.white70, size: 18),
-          ],
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style:
+                          TextStyle(color: Colors.white.withOpacity(.85), fontSize: 13, fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(CupertinoIcons.chevron_right, color: Colors.white70, size: 18),
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
