@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/identity/identity.dart';
 import '../data/models.dart';
 import '../data/repo.dart';
+import '../presentation/commercial_license_mock_page.dart'; // 👈 add
 
 class DocumentsListPage extends StatefulWidget {
   final String categoryId;
@@ -41,6 +42,23 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
     await _future;
   }
 
+  void _open(DocumentSummary d) {
+    final title = d.title.toLowerCase();
+
+    // 🔹 Demo rule: open the mock page for your Commercial License
+    if (d.id == 'doc-1' || title.contains('commercial')) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const CommercialLicenseMockPage()),
+      );
+      return;
+    }
+
+    // 🔹 Default (no detail page yet) — tweak as needed
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Tapped: ${d.title}')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -71,15 +89,16 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
               itemBuilder: (_, i) {
                 final d = items[i];
                 return ListTile(
-                  title: Text(d.title, style: const TextStyle(fontWeight: FontWeight.w700)),
+                  title: Text(
+                    d.title,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
                   subtitle: Text('${d.issuer} • ${d.type}'),
                   trailing: Icon(
                     d.valid ? Icons.verified : Icons.error_outline,
                     color: d.valid ? Colors.green : Colors.orange,
                   ),
-                  onTap: () {
-                    // TODO: push to DocumentDetailPage(d.id) if/when needed
-                  },
+                  onTap: () => _open(d),
                 );
               },
             ),

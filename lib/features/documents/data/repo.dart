@@ -20,7 +20,7 @@ class FakeDocumentsRepo implements DocumentsRepo {
               id: 'doc-1',
               title: 'Commercial License',
               issuer: 'Trakhees',
-              type: 'License',
+              type: 'business',
               issuedAt: DateTime.now().subtract(const Duration(days: 9)),
               valid: true,
             ),
@@ -28,7 +28,7 @@ class FakeDocumentsRepo implements DocumentsRepo {
               id: 'doc-2',
               title: 'Seafarer ID',
               issuer: 'Maritime Authority',
-              type: 'ID',
+              type: 'personnel',
               issuedAt: DateTime.now().subtract(const Duration(days: 32)),
               valid: true,
             ),
@@ -36,7 +36,7 @@ class FakeDocumentsRepo implements DocumentsRepo {
               id: 'doc-3',
               title: 'Gate Pass',
               issuer: 'Port Authority',
-              type: 'Access',
+              type: 'access',
               issuedAt: DateTime.now().subtract(const Duration(days: 2)),
               valid: true,
             ),
@@ -55,11 +55,11 @@ class FakeDocumentsRepo implements DocumentsRepo {
     // strict category slice
     switch (categoryId) {
       case 'trade':
-        return all.where((d) => d.type == 'License').toList();
+        return all.where((d) => d.type == 'business').toList();
       case 'personnel':
-        return all.where((d) => d.type == 'ID' || d.type == 'Certificate').toList();
+        return all.where((d) => d.type == 'personnel').toList();
       case 'access':
-        return all.where((d) => d.type == 'Access').toList();
+        return all.where((d) => d.type == 'access').toList();
       default:
         return const []; // unknown category → empty list
     }

@@ -4,6 +4,7 @@ import '../../../core/identity/identity.dart';
 import '../data/models.dart';
 import '../data/repo.dart';
 import '../../documents/presentation/documents_list_page.dart';
+import '../../documents/presentation/commercial_license_mock_page.dart';
 
 class CategoriesListPage extends StatefulWidget {
   const CategoriesListPage({super.key});
@@ -178,14 +179,14 @@ class _CategoryLook {
     final id = c.id.toLowerCase();
     final name = c.name.toLowerCase();
 
-    if (id.contains('trade') || name.contains('trade')) {
+    if (id.contains('business') || name.contains('business')) {
       return const _CategoryLook(
         color: Color(0xFFD4A52E), // gold-ish
         icon: CupertinoIcons.doc_chart_fill,
         subtitle: 'Company licences, activities & renewals',
       );
     }
-    if (id.contains('person') || name.contains('person')) {
+    if (id.contains('personnel') || name.contains('personnel')) {
       return const _CategoryLook(
         color: Color(0xFF2EA043), // green
         icon: CupertinoIcons.person_crop_square_fill,
