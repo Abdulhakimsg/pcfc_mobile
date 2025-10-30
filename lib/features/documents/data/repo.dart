@@ -40,6 +40,22 @@ class FakeDocumentsRepo implements DocumentsRepo {
               issuedAt: DateTime.now().subtract(const Duration(days: 2)),
               valid: true,
             ),
+            DocumentSummary(
+              id: 'doc-4',
+              title: 'Logistics License',
+              issuer: 'JAFZA',
+              type: 'business',
+              issuedAt: DateTime.now().subtract(const Duration(days: 9)),
+              valid: true,
+            ),
+            DocumentSummary(
+              id: 'doc-5',
+              title: 'Bunkering Service Provider Permit',
+              issuer: 'Dubai Maritime Authority',
+              type: 'business',
+              issuedAt: DateTime.now().subtract(const Duration(days: 9)),
+              valid: true,
+            ),
           ]
         : <DocumentSummary>[
             DocumentSummary(

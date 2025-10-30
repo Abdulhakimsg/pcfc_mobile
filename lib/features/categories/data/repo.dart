@@ -15,7 +15,7 @@ class FakeCategoriesRepo implements CategoriesRepo {
   Future<List<Category>> listFor(Identity s) async {
     await Future<void>.delayed(const Duration(milliseconds: 200));
     return const [
-      Category(id: 'trade', name: 'Business Documents', count: 1),
+      Category(id: 'trade', name: 'Business Documents', count: 3),
       Category(id: 'personnel', name: 'Personnel Documents', count: 1),
       Category(id: 'access', name: 'Access Passes', count: 1),
     ];
