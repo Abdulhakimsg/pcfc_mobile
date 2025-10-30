@@ -93,7 +93,7 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
                     d.title,
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
-                  subtitle: Text('${d.issuer} • ${d.type}'),
+                  subtitle: Text('${d.issuer}'),
                   trailing: Icon(
                     d.valid ? Icons.verified : Icons.error_outline,
                     color: d.valid ? Colors.green : Colors.orange,
