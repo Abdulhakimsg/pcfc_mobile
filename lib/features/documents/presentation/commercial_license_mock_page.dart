@@ -137,7 +137,7 @@ class _CommercialLicenseMockPageState extends State<CommercialLicenseMockPage> {
                       const Text(
                         'Share Document',
                         style:
-                            TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                            TextStyle(color: Colors.black, fontSize: 18, fontWeight: FontWeight.w800),
                       ),
                       const SizedBox(height: 16),
                       Center(
@@ -420,7 +420,7 @@ class _CommercialLicenseMockPageState extends State<CommercialLicenseMockPage> {
                                 ),
                               ),
                               Text(
-                                'Attest Document Now',
+                                'Attest document now',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
