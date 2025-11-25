@@ -183,7 +183,7 @@ class _CategoryLook {
       return const _CategoryLook(
         color: Color(0xFFD4A52E), // gold-ish
         icon: CupertinoIcons.doc_chart_fill,
-        subtitle: 'Company licences, activities & renewals',
+        subtitle: 'Licenses and permits',
       );
     }
     if (id.contains('personnel') || name.contains('personnel')) {

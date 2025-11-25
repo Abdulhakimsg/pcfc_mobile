@@ -1,17 +1,19 @@
 // lib/features/documents/presentation/commercial_license_mock_page.dart
-// Assets (pubspec):
-//  - assets/brand/trakhees_logo.png
-//  - assets/brand/pcfc_logo.webp
-//  - assets/mock/commercial_license.json
-// Deps: pdfx, qr_flutter
+// Deps: pdfx, qr_flutter, http
+//
+// This version:
+// - Calls the real Nexus API
+// - Takes the first object in "data"
+// - Uses the "presentation"/"pdf" file URL for the PDF
+// - Tries to read company/member data from the RAW JSON
 
 import 'dart:convert';
-import 'dart:typed_data';
 import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdfx/pdfx.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:http/http.dart' as http;
 
 class CommercialLicenseMockPage extends StatefulWidget {
   const CommercialLicenseMockPage({super.key});
@@ -26,6 +28,13 @@ class _CommercialLicenseMockPageState extends State<CommercialLicenseMockPage> {
   PdfController? _pdf;
   bool _attesting = false;
   bool _attested = false;
+
+  // ── Config ─────────────────────────────────────────────────────────────────
+  static const _baseUrl = 'https://nexus.uat.accredify.io/api/v1';
+  static const _workflowUuid = 'a03c899e-7a44-473a-acdd-4329aa8097f8';
+
+  // ⚠️ Replace this with your real token (and store it safely)
+  static const _bearerToken = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiJhMDQ0N2NmZC00ZmFkLTRlMDctYTAwMS0wNmUxMDU2ZWMzOWMiLCJqdGkiOiJlZTk1YzUxZTJjYTBmOGFkODAxMjg5YzQ3OTA1MGE1YzdmOTc4ZWM5MmYxNzRiOWRlMzkyYWU4NGY0NTdlZTRiMmU3MTYxZDRlZjlmOTg5NiIsImlhdCI6MTc2MjMzNTYwOC4yNTc4NTcsIm5iZiI6MTc2MjMzNTYwOC4yNTc4NjEsImV4cCI6MTc5Mzg3MTYwOC4yNDQ4Mywic3ViIjoiIiwic2NvcGVzIjpbInJ1bi13b3JrZmxvdyIsIndlYmNvbXBvbmVudC12ZXJpZmljYXRpb24iLCJ2ZXJpZmljYXRpb24tc3VpdGUiLCJ3b3JrZmxvd3M6cmVhZCIsIndvcmtmbG93LXJ1bnM6cmVhZCIsImRvY3VtZW50czpyZWFkIiwiZG9jdW1lbnRzOndyaXRlIiwiY3VzdG9tLXZpZXdzOnJlYWQiLCJ1c2VyczpyZWFkIiwiZGVzaWduLXRlbXBsYXRlczpyZWFkIiwiZG9jdW1lbnQtdGVtcGxhdGVzOnJlYWQiLCJncm91cHM6cmVhZCIsImNvdXJzZXM6cmVhZCIsImNvdXJzZXM6d3JpdGUiXX0.YOQACJ_J8A8RN7G_UJUtJaDIvbmPkLfc_RTzsnkbdqZxWzEA4Y9IZsTBZbEXmLkeWErGOM60R-_yBF0n9jNlVLQVDpmlf2DnGzK5G9lTZUO48Y_VwDnA4qbr52Gc2HIueTmBEZBrl_-5Hg-hIhdlcRmnVxsUmCPM8s_2RpM9M_0-dPt1_C1UrJ9Ce0eicRdH7S03od4cPgWx9HMoTg3olElRnhA0kehcZA_FXkZGxBL7ybE1lJ9wUUKp2Aszb-VLV0MtLqtEZrZhiTObESOdCSdQWWmMSySXw_UnaMDei1rMlhORNYvejXyb7QCOG7QvJJA-dJ16VYeT3EkQ11G681NGYV1JoCubZwrncX-2tCaVTaLFG65PKVL7ncGwjtms_vnJ7eBowA9lIbTYMfScZX76kub5mW2JQNWEvwR9-M9jJnfXmACAwioVk4Ag1-58a2hxuog3NDmjDai1_cKBz_zlULQCDq5_QxIskO1fNyS_9p9Dwj_cihFtL2ovec8H6vxZ9_MOlUUe9tJ4H94MWpRXOPKm79OMsbJPC2SiZ3AH4PWQdpqlkK5Q9SQHuldPgs-mD-7XcA1Gf394UFuqjmEVcWz-ecHfVHDXchFAPSGDBD4zt6AiSKodkISbm0xMeFvi3dLmpWM4BtZUsu3_gGM9ZKg7MsdObOBL9dcw2-0';
 
   @override
   void initState() {
@@ -47,42 +56,124 @@ class _CommercialLicenseMockPageState extends State<CommercialLicenseMockPage> {
     return m?.group(1) ?? s;
   }
 
-  String _stripDataUrlHeader(String s) {
-    if (!s.startsWith('data:')) return s;
-    final i = s.indexOf(',');
-    return i >= 0 ? s.substring(i + 1) : s;
-  }
-
-  // ── Load & parse ───────────────────────────────────────────────────────────
+  // ── Load & parse from Nexus API ────────────────────────────────────────────
   Future<_MockDoc> _load() async {
-    final raw =
-        await rootBundle.loadString('assets/mock/commercial_license.json');
-    final json = jsonDecode(raw) as Map<String, dynamic>;
-    final data = (json['data'] as Map<String, dynamic>);
+    // 1. Call documents API (first page, filtered by workflow_uuid)
+    final uri = Uri.parse(
+        '$_baseUrl/documents?workflow_uuid=$_workflowUuid&page=1');
 
-    final companyName = _untag(data['company_name']);
-    final memberName = _untag(data['member_name']);
-    final memberRole = _untag(data['member_role']);
+    final res = await http.get(
+      uri,
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $_bearerToken',
+      },
+    );
 
-    final add = (data['additionalData'] as Map<String, dynamic>?);
-    final shareLink = _untag(add?['shareLink']);
-
-    final pdfRaw = _untag(add?['pdf']);
-    final b64 = _stripDataUrlHeader(pdfRaw);
-    Uint8List bytes = Uint8List(0);
-    if (b64.isNotEmpty) bytes = base64Decode(b64);
-
-    PdfController? controller;
-    if (bytes.isNotEmpty) {
-      controller = PdfController(document: PdfDocument.openData(bytes));
+    if (res.statusCode != 200) {
+      throw Exception('Failed to load documents: ${res.statusCode}');
     }
+
+    final json = jsonDecode(res.body) as Map<String, dynamic>;
+    final dataList = (json['data'] as List<dynamic>? ?? const []);
+    if (dataList.isEmpty) {
+      throw Exception('No documents in response');
+    }
+
+    // 2. Take the first object in "data"
+    final docJson = dataList.first as Map<String, dynamic>;
+
+    final docShareLink = docJson['share_link'] as String? ?? '';
+
+    final recipient = docJson['recipient'] as Map<String, dynamic>?;
+    String memberName = recipient?['name'] as String? ?? '';
+
+    // 3. Extract file URLs: prefer "presentation", fallback to "pdf" and "raw"
+    final files = (docJson['files'] as List<dynamic>? ?? const []);
+    String? pdfUrl;
+    String? rawUrl;
+
+    for (final f in files) {
+      final m = f as Map<String, dynamic>;
+      final label = m['label'] as String? ?? '';
+      final url = m['url'] as String? ?? '';
+      if (label == 'presentation' && pdfUrl == null) {
+        pdfUrl = url;
+      } else if (label == 'pdf' && pdfUrl == null) {
+        pdfUrl = url;
+      } else if (label == 'raw' && rawUrl == null) {
+        rawUrl = url;
+      }
+    }
+
+    // 4. Try to pull company_name / member_role from RAW JSON (if available)
+    String companyName = '';
+    String memberRole = '';
+
+    if (rawUrl != null && rawUrl.isNotEmpty) {
+      final rawRes = await http.get(Uri.parse(rawUrl));
+      if (rawRes.statusCode == 200) {
+        final rawJson = jsonDecode(rawRes.body);
+
+        Map<String, dynamic>? dataMap;
+
+        if (rawJson is Map<String, dynamic>) {
+          // If the raw structure is { "data": { ... } } (like your old mock)
+          if (rawJson['data'] is Map<String, dynamic>) {
+            dataMap = rawJson['data'] as Map<String, dynamic>;
+          } else {
+            dataMap = rawJson;
+          }
+        }
+
+        if (dataMap != null) {
+          companyName = _untag(dataMap['company_name']);
+          memberRole = _untag(dataMap['member_role']);
+
+          // If member name is empty from recipient, try from raw
+          if (memberName.isEmpty) {
+            memberName = _untag(dataMap['member_name']);
+          }
+
+          // If share link is empty from top-level, try the old additionalData path
+          final add = dataMap['additionalData'] as Map<String, dynamic>?;
+          if (docShareLink.isEmpty && add != null) {
+            final maybeShare = _untag(add['shareLink']);
+            if (maybeShare.isNotEmpty) {
+              // ignore: unused_local_variable
+              final shareLinkFromRaw = maybeShare;
+            }
+          }
+        }
+      }
+    }
+
+    // 5. Load the PDF into PdfController (if URL exists)
+    PdfController? controller;
+    if (pdfUrl != null && pdfUrl.isNotEmpty) {
+      final pdfRes = await http.get(Uri.parse(pdfUrl));
+      if (pdfRes.statusCode == 200) {
+        controller = PdfController(
+          document: PdfDocument.openData(pdfRes.bodyBytes),
+        );
+      }
+    }
+
     _pdf = controller;
+
+    // Fallback labels if raw didn’t contain those fields
+    if (companyName.isEmpty) {
+      companyName = 'Trakhees Licensee';
+    }
+    if (memberRole.isEmpty) {
+      memberRole = 'Owner';
+    }
 
     return _MockDoc(
       companyName: companyName,
       memberName: memberName,
       memberRole: memberRole,
-      shareLink: shareLink,
+      shareLink: docShareLink,
       pdf: controller,
     );
   }
@@ -135,9 +226,12 @@ class _CommercialLicenseMockPageState extends State<CommercialLicenseMockPage> {
                       ),
                       const SizedBox(height: 12),
                       const Text(
-                        'Share Document',
-                        style:
-                            TextStyle(color: Colors.black, fontSize: 18, fontWeight: FontWeight.w800),
+                        'For OnePass Scan',
+                        style: TextStyle(
+                          color: Colors.black,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                       const SizedBox(height: 16),
                       Center(
@@ -186,8 +280,9 @@ class _CommercialLicenseMockPageState extends State<CommercialLicenseMockPage> {
       _attested = true;
     });
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content:
-          Text('Sent to PCFC for attestation. Attested document will be in your registered e-mail within the next 15 minutes.'),
+      content: Text(
+        'Sent to PCFC for attestation. Attested document will be in your registered e-mail within the next 15 minutes.',
+      ),
     ));
   }
 
@@ -287,26 +382,29 @@ class _CommercialLicenseMockPageState extends State<CommercialLicenseMockPage> {
                     ),
                     children: [
                       const TextSpan(
-                          text: 'This commercial license belongs to ',
-                          style: TextStyle(fontWeight: FontWeight.w500)),
+                        text: 'This commercial license belongs to ',
+                        style: TextStyle(fontWeight: FontWeight.w500),
+                      ),
                       TextSpan(
-                          text: doc.companyName,
-                          style:
-                              const TextStyle(fontWeight: FontWeight.w700)),
+                        text: doc.companyName,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
                       const TextSpan(
-                          text: '. ',
-                          style: TextStyle(fontWeight: FontWeight.w500)),
+                        text: '. ',
+                        style: TextStyle(fontWeight: FontWeight.w500),
+                      ),
                       TextSpan(
-                          text: doc.memberName,
-                          style:
-                              const TextStyle(fontWeight: FontWeight.w700)),
+                        text: doc.memberName,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
                       const TextSpan(
-                          text: ' is registered as ',
-                          style: TextStyle(fontWeight: FontWeight.w500)),
+                        text: ' is registered as ',
+                        style: TextStyle(fontWeight: FontWeight.w500),
+                      ),
                       TextSpan(
-                          text: doc.memberRole,
-                          style:
-                              const TextStyle(fontWeight: FontWeight.w700)),
+                        text: doc.memberRole,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
                       const TextSpan(text: '.'),
                     ],
                   ),
@@ -352,9 +450,10 @@ class _CommercialLicenseMockPageState extends State<CommercialLicenseMockPage> {
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: [
                     BoxShadow(
-                        color: Colors.black.withOpacity(.25),
-                        blurRadius: 24,
-                        offset: const Offset(0, 12))
+                      color: Colors.black.withOpacity(.25),
+                      blurRadius: 24,
+                      offset: const Offset(0, 12),
+                    )
                   ],
                 ),
                 height: 520,
@@ -362,8 +461,10 @@ class _CommercialLicenseMockPageState extends State<CommercialLicenseMockPage> {
                 child: doc.pdf == null
                     ? const Center(
                         child: Padding(
-                            padding: EdgeInsets.all(16),
-                            child: Text('No PDF found')))
+                          padding: EdgeInsets.all(16),
+                          child: Text('No PDF found'),
+                        ),
+                      )
                     : PdfView(
                         controller: doc.pdf!,
                         scrollDirection: Axis.vertical,
@@ -375,16 +476,18 @@ class _CommercialLicenseMockPageState extends State<CommercialLicenseMockPage> {
 
               // — Primary action: Send to PCFC (helper text inside) — //
               SizedBox(
-                height: 68, // ↑ allow two compact lines without overflow
+                height: 68,
                 child: ElevatedButton(
-                  onPressed:
-                      (_attesting || _attested) ? null : _sendToPcfcForAttestation,
+                  onPressed: (_attesting || _attested)
+                      ? null
+                      : _sendToPcfcForAttestation,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF2F6FEB),
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   child: Row(
                     children: [
@@ -403,7 +506,7 @@ class _CommercialLicenseMockPageState extends State<CommercialLicenseMockPage> {
                           style: const TextStyle(height: 1.1),
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
-                            mainAxisSize: MainAxisSize.min, // ← key
+                            mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
@@ -419,11 +522,11 @@ class _CommercialLicenseMockPageState extends State<CommercialLicenseMockPage> {
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
-                              Text(
+                              const Text(
                                 'Attest document now',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
                                   color: Color(0xFFE9F0FF),
@@ -457,12 +560,31 @@ class _CommercialLicenseMockPageState extends State<CommercialLicenseMockPage> {
                 child: FilledButton.icon(
                   onPressed: () => _openShareQr(doc.shareLink),
                   icon: const Icon(Icons.ios_share),
-                  label: const Text('Share securely'),
+                  label: const Text('Present for OnePass Scan'),
                   style: FilledButton.styleFrom(
                     foregroundColor: Colors.white,
                     backgroundColor: Colors.white.withOpacity(0.14),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              // Secondary: Download
+              SizedBox(
+                height: 54,
+                child: FilledButton.icon(
+                  onPressed: () => _openShareQr(doc.shareLink),
+                  icon: const Icon(Icons.file_download),
+                  label: const Text('Download Credential'),
+                  style: FilledButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    backgroundColor: Colors.white.withOpacity(0.14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
               ),

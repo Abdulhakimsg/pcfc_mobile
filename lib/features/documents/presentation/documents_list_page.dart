@@ -62,7 +62,7 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Documents • ${widget.categoryName}')),
+      appBar: AppBar(title: Text('${widget.categoryName}')),
       body: FutureBuilder<List<DocumentSummary>>(
         future: _future,
         builder: (context, s) {

@@ -254,7 +254,7 @@ class _IdentityHeaderCard extends StatelessWidget {
                   children: const [
                     Expanded(child: _StatPill(label: 'Signature', value: '0', icon: CupertinoIcons.doc_text_fill)),
                     SizedBox(width: AppTheme.gL),
-                    Expanded(child: _StatPill(label: 'Documents', value: '3', icon: CupertinoIcons.doc_on_doc_fill)),
+                    Expanded(child: _StatPill(label: 'Documents', value: '5', icon: CupertinoIcons.doc_on_doc_fill)),
                   ],
                 ),
                 const SizedBox(height: AppTheme.gL),
