@@ -1,5 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+
 import '../../../core/identity/identity.dart';
 import '../data/models.dart';
 import '../data/repo.dart';
@@ -16,11 +19,57 @@ class _CategoriesListPageState extends State<CategoriesListPage> {
   late final CategoriesRepo _repo;
   late Future<List<Category>> _future;
 
+  int? _businessDocsCount;
+
   @override
   void initState() {
     super.initState();
     _repo = makeCategoriesRepo();
-    _future = _repo.listFor(IdentityContext.current);
+    _future = _loadAll(); // load categories + business docs count together
+  }
+
+  Future<List<Category>> _loadAll() async {
+    // Load categories
+    final categories = await _repo.listFor(IdentityContext.current);
+
+    // Load Business docs meta.total (email identifier)
+    _businessDocsCount = await _fetchBusinessDocsCount();
+
+    // No setState needed: FutureBuilder will rebuild when this future completes
+    return categories;
+  }
+
+  Future<int?> _fetchBusinessDocsCount() async {
+    try {
+      final uri = Uri.parse(
+        'https://nexus.uat.accredify.io/api/v1/documents/by_recipient'
+        '?identifier_type=email&identifier_value=test%40business.com',
+      );
+
+      final res = await http.get(
+        uri,
+        headers: const {
+          'Accept': 'application/json',
+          'Authorization':
+              'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiJhMDQ0N2NmZC00ZmFkLTRlMDctYTAwMS0wNmUxMDU2ZWMzOWMiLCJqdGkiOiJlZTk1YzUxZTJjYTBmOGFkODAxMjg5YzQ3OTA1MGE1YzdmOTc4ZWM5MmYxNzRiOWRlMzkyYWU4NGY0NTdlZTRiMmU3MTYxZDRlZjlmOTg5NiIsImlhdCI6MTc2MjMzNTYwOC4yNTc4NTcsIm5iZiI6MTc2MjMzNTYwOC4yNTc4NjEsImV4cCI6MTc5Mzg3MTYwOC4yNDQ4Mywic3ViIjoiIiwic2NvcGVzIjpbInJ1bi13b3JrZmxvdyIsIndlYmNvbXBvbmVudC12ZXJpZmljYXRpb24iLCJ2ZXJpZmljYXRpb24tc3VpdGUiLCJ3b3JrZmxvd3M6cmVhZCIsIndvcmtmbG93LXJ1bnM6cmVhZCIsImRvY3VtZW50czpyZWFkIiwiZG9jdW1lbnRzOndyaXRlIiwiY3VzdG9tLXZpZXdzOnJlYWQiLCJ1c2VyczpyZWFkIiwiZGVzaWduLXRlbXBsYXRlczpyZWFkIiwiZG9jdW1lbnQtdGVtcGxhdGVzOnJlYWQiLCJncm91cHM6cmVhZCIsImNvdXJzZXM6cmVhZCIsImNvdXJzZXM6d3JpdGUiXX0.YOQACJ_J8A8RN7G_UJUtJaDIvbmPkLfc_RTzsnkbdqZxWzEA4Y9IZsTBZbEXmLkeWErGOM60R-_yBF0n9jNlVLQVDpmlf2DnGzK5G9lTZUO48Y_VwDnA4qbr52Gc2HIueTmBEZBrl_-5Hg-hIhdlcRmnVxsUmCPM8s_2RpM9M_0-dPt1_C1UrJ9Ce0eicRdH7S03od4cPgWx9HMoTg3olElRnhA0kehcZA_FXkZGxBL7ybE1lJ9wUUKp2Aszb-VLV0MtLqtEZrZhiTObESOdCSdQWWmMSySXw_UnaMDei1rMlhORNYvejXyb7QCOG7QvJJA-dJ16VYeT3EkQ11G681NGYV1JoCubZwrncX-2tCaVTaLFG65PKVL7ncGwjtms_vnJ7eBowA9lIbTYMfScZX76kub5mW2JQNWEvwR9-M9jJnfXmACAwioVk4Ag1-58a2hxuog3NDmjDai1_cKBz_zlULQCDq5_QxIskO1fNyS_9p9Dwj_cihFtL2ovec8H6vxZ9_MOlUUe9tJ4H94MWpRXOPKm79OMsbJPC2SiZ3AH4PWQdpqlkK5Q9SQHuldPgs-mD-7XcA1Gf394UFuqjmEVcWz-ecHfVHDXchFAPSGDBD4zt6AiSKodkISbm0xMeFvi3dLmpWM4BtZUsu3_gGM9ZKg7MsdObOBL9dcw2-0',
+        },
+      );
+
+      if (res.statusCode == 200) {
+        final decoded = jsonDecode(res.body) as Map<String, dynamic>;
+        final meta = decoded['meta'] as Map<String, dynamic>?;
+        final total = meta?['total'];
+
+        final intCount =
+            total is int ? total : int.tryParse(total?.toString() ?? '') ?? 0;
+
+        return intCount;
+      } else {
+        return null;
+      }
+    } catch (_) {
+      return null;
+    }
   }
 
   @override
@@ -31,6 +80,9 @@ class _CategoriesListPageState extends State<CategoriesListPage> {
         future: _future,
         builder: (context, s) {
           if (s.connectionState != ConnectionState.done) {
+            // Waiting for:
+            // - categories
+            // - business docs meta.total
             return const Center(child: CircularProgressIndicator());
           }
           if (s.hasError) return Center(child: Text('Failed: ${s.error}'));
@@ -45,12 +97,22 @@ class _CategoriesListPageState extends State<CategoriesListPage> {
               final c = items[i];
               final ui = _CategoryLook.from(c);
 
+              final id = c.id.toLowerCase();
+              final name = c.name.toLowerCase();
+              final isBusiness =
+                  id.contains('business') || name.contains('business');
+
+              // For "business" category, override count with meta.total (if loaded)
+              final int? count = isBusiness
+                  ? (_businessDocsCount ?? 0)
+                  : c.count;
+
               return _CategoryTile(
                 color: ui.color,
                 icon: ui.icon,
                 title: c.name,
                 subtitle: ui.subtitle,
-                count: c.count,
+                count: count,
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
