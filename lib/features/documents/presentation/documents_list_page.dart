@@ -62,6 +62,12 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
     return id.contains('personnel') || name.contains('personnel');
   }
 
+  bool get _isAccessCategory {
+    final id = widget.categoryId.toLowerCase();
+    final name = widget.categoryName.toLowerCase();
+    return id.contains('access') || name.contains('access') || id.contains('pass');
+  }
+
   @override
   void initState() {
     super.initState();
@@ -92,6 +98,11 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
       // Personnel docs: fetch from Nexus via personnel email identifier
       return _fetchDocumentsFromNexus(
         encodedEmail: 'demo_ali%40personnel.com',
+      );
+    } else if (_isAccessCategory) {
+      // Access docs: fetch from Nexus via access email identifier
+      return _fetchDocumentsFromNexus(
+        encodedEmail: 'demo_ali%40access.com',
       );
     } else {
       // Other categories: use existing repo
@@ -201,7 +212,7 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
     return null;
   }
 
-  /// Core Nexus fetcher used for both Business & Personnel lists
+  /// Core Nexus fetcher used for Business / Personnel / Access lists
   Future<List<_UiDocument>> _fetchDocumentsFromNexus({
     required String encodedEmail,
   }) async {
@@ -316,8 +327,8 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
   }
 
   Future<void> _open(_UiDocument d) async {
-    // For Business and Personnel categories, open the detailed document page
-    if (_isBusinessCategory || _isPersonnelCategory) {
+    // For Business, Personnel and Access categories, open the detailed document page
+    if (_isBusinessCategory || _isPersonnelCategory || _isAccessCategory) {
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => DocumentPage(

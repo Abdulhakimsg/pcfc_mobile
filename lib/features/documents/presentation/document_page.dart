@@ -4,12 +4,16 @@
 //
 // This version:
 // - Uses rawUrl + pdfUrl from parent (DocumentsListPage)
-// - Parses RAW JSON to fill fields for both Business & Personnel docs
-// - For Personnel docs (document_type == "Personnel"):
+// - Parses RAW JSON to fill fields for Business, Personnel & Access docs
+// - Personnel (document_type == "Personnel"):
 //   * issuer = additionalData.document_issuer ("Maersk Training")
 //   * holder = recipient.name ("M Ali")
-//   * Important Details only shows Recipient Name + Issuer
-// - For Business docs, keeps your existing behaviour
+//   * Important Details: Recipient Name + Issuer
+// - Access cards (document_type contains "access"):
+//   * Human statement + Important Details tailored to card-holder use case
+//   * Important Details: Card Holder, Card Type, Issuer (no company/owner info)
+//   * Hides Attest + Download buttons (only OnePass scan)
+// - Business docs keep previous behaviour
 // - Switches issuer logo based on document_issuer (Trakhees / JAFZA / Maersk / default PCFC)
 // - Renders the PDF from pdfUrl and sizes the card using the PDF page aspect ratio
 //   so landscape certificates don’t leave extra vertical whitespace.
@@ -18,9 +22,9 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:pdfx/pdfx.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:http/http.dart' as http;
 
 class DocumentPage extends StatefulWidget {
   final String displayTitle; // e.g. "Commercial License" / "Safety Training Level 1"
@@ -130,7 +134,7 @@ class _DocumentPageState extends State<DocumentPage> {
           }
 
           if (dataMap != null) {
-            // additionalData (Personnel / custom fields)
+            // additionalData (Personnel / Access / custom fields)
             final additional = dataMap['additionalData'];
             if (additional is Map<String, dynamic>) {
               final dt = additional['document_type'];
@@ -148,12 +152,12 @@ class _DocumentPageState extends State<DocumentPage> {
               }
             }
 
-            // Company (business docs)
+            // Company (business / access docs)
             companyName = _untag(
               dataMap['company_name'] ?? dataMap['business_name'] ?? '',
             );
 
-            // Recipient (for Personnel docs we want this as holder)
+            // Recipient (for Personnel & Access we want this as holder)
             final recipient = dataMap['recipient'];
             if (recipient is Map<String, dynamic>) {
               final rn = recipient['name'];
@@ -168,7 +172,8 @@ class _DocumentPageState extends State<DocumentPage> {
 
             // If still no holder name, fall back to other fields
             if (holderName.isEmpty) {
-              final candidateHolder = dataMap['holder_name'] ?? dataMap['name'];
+              final candidateHolder =
+                  dataMap['holder_name'] ?? dataMap['name'];
               holderName = _untag(candidateHolder);
             }
 
@@ -208,41 +213,47 @@ class _DocumentPageState extends State<DocumentPage> {
       }
     }
 
-// 2) Load the PDF from pdfUrl and compute aspect ratio
-PdfController? controller;
-if (widget.pdfUrl != null && widget.pdfUrl!.isNotEmpty) {
-  try {
-    final pdfRes = await http.get(Uri.parse(widget.pdfUrl!));
-    if (pdfRes.statusCode == 200) {
-      // PdfController expects a Future<PdfDocument>
-      final docFuture = PdfDocument.openData(pdfRes.bodyBytes);
-
-      // Use the resolved document once to compute aspect ratio
+    // 2) Load the PDF from pdfUrl and compute aspect ratio
+    PdfController? controller;
+    if (widget.pdfUrl != null && widget.pdfUrl!.isNotEmpty) {
       try {
-        final pdfDoc = await docFuture;
-        final firstPage = await pdfDoc.getPage(1);
-        final w = firstPage.width;
-        final h = firstPage.height;
-        if (w != null && h != null && h != 0) {
-          pageAspect = w / h; // width / height
-        }
-        await firstPage.close();
-      } catch (_) {
-        // ignore, we'll fall back later
-      }
+        final pdfRes = await http.get(Uri.parse(widget.pdfUrl!));
+        if (pdfRes.statusCode == 200) {
+          // PdfController expects a Future<PdfDocument>
+          final docFuture = PdfDocument.openData(pdfRes.bodyBytes);
 
-      // Pass the Future<PdfDocument> into the controller
-      controller = PdfController(document: docFuture);
+          // Use the resolved document once to compute aspect ratio
+          try {
+            final pdfDoc = await docFuture;
+            final firstPage = await pdfDoc.getPage(1);
+            final w = firstPage.width;
+            final h = firstPage.height;
+            if (w != null && h != null && h != 0) {
+              pageAspect = w / h; // width / height
+            }
+            await firstPage.close();
+          } catch (_) {
+            // ignore, we'll fall back later
+          }
+
+          // Pass the Future<PdfDocument> into the controller
+          controller = PdfController(document: docFuture);
+        }
+      } catch (_) {
+        // ignore PDF error, show 'No PDF found'
+      }
     }
-  } catch (_) {
-    // ignore PDF error, show 'No PDF found'
-  }
-}
 
     _pdf = controller;
 
-    // Determine if this is a Personnel credential
-    final isPersonnel = documentType.toLowerCase().trim() == 'personnel';
+    // Determine types
+    final typeLower = documentType.toLowerCase().trim();
+    final nameLower = documentName.toLowerCase().trim();
+
+    final isPersonnel = typeLower == 'personnel';
+    // Treat as access card if document_type or name mentions "access"
+    final isAccess =
+        typeLower.contains('access') || nameLower.contains('access');
 
     // Fallbacks / nice formatting
     if (companyName.isEmpty && !isPersonnel) {
@@ -278,6 +289,7 @@ if (widget.pdfUrl != null && widget.pdfUrl!.isNotEmpty) {
       documentType: documentType,
       recipientEmail: recipientEmail,
       isPersonnel: isPersonnel,
+      isAccess: isAccess,
       pageAspect: pageAspect,
       pdf: controller,
     );
@@ -411,6 +423,12 @@ if (widget.pdfUrl != null && widget.pdfUrl!.isNotEmpty) {
           final docName = doc.documentName;
           final logoAsset = _issuerLogoAsset(issuerName);
 
+          const statementBaseStyle = TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            height: 1.45,
+          );
+
           return Scaffold(
             backgroundColor: const Color(0xFF0B1E34),
             appBar: AppBar(title: Text(docName)),
@@ -484,54 +502,90 @@ if (widget.pdfUrl != null && widget.pdfUrl!.isNotEmpty) {
                     ),
                     border: Border.all(color: Colors.white.withOpacity(0.08)),
                   ),
-                  child: RichText(
-                    textAlign: TextAlign.center,
-                    text: TextSpan(
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        height: 1.45,
-                      ),
-                      children: [
-                        const TextSpan(
-                          text: 'This ',
-                          style: TextStyle(fontWeight: FontWeight.w500),
+                  child: doc.isAccess
+                      ? Text.rich(
+                          TextSpan(
+                            style: statementBaseStyle,
+                            children: [
+                              const TextSpan(
+                                text: 'This ',
+                                style: TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                              const TextSpan(
+                                text: 'access card',
+                                style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                              const TextSpan(
+                                text: ' belongs to ',
+                                style: TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                              TextSpan(
+                                text: doc.holderName,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const TextSpan(
+                                text: '.',
+                                style: TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                            ],
+                          ),
+                          textAlign: TextAlign.center,
+                        )
+                      : RichText(
+                          textAlign: TextAlign.center,
+                          text: TextSpan(
+                            style: statementBaseStyle,
+                            children: [
+                              const TextSpan(
+                                text: 'This ',
+                                style: TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                              TextSpan(
+                                text: docName.toLowerCase(),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const TextSpan(
+                                text: ' belongs to ',
+                                style: TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                              TextSpan(
+                                text: doc.isPersonnel
+                                    ? doc.holderName
+                                    : doc.companyName,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const TextSpan(
+                                text: '.\n\n',
+                                style: TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                              TextSpan(
+                                text: doc.holderName,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const TextSpan(
+                                text: ' is registered as ',
+                                style: TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                              TextSpan(
+                                text: doc.isPersonnel
+                                    ? 'Recipient'
+                                    : doc.memberRole,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const TextSpan(text: '.'),
+                            ],
+                          ),
                         ),
-                        TextSpan(
-                          text: docName.toLowerCase(),
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        const TextSpan(
-                          text: ' belongs to ',
-                          style: TextStyle(fontWeight: FontWeight.w500),
-                        ),
-                        TextSpan(
-                          text: doc.isPersonnel
-                              ? doc.holderName
-                              : doc.companyName,
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        const TextSpan(
-                          text: '.\n\n',
-                          style: TextStyle(fontWeight: FontWeight.w500),
-                        ),
-                        TextSpan(
-                          text: doc.holderName,
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        const TextSpan(
-                          text: ' is registered as ',
-                          style: TextStyle(fontWeight: FontWeight.w500),
-                        ),
-                        TextSpan(
-                          text:
-                              doc.isPersonnel ? 'Recipient' : doc.memberRole,
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        const TextSpan(text: '.'),
-                      ],
-                    ),
-                  ),
                 ),
 
                 // — Important Details — //
@@ -557,8 +611,20 @@ if (widget.pdfUrl != null && widget.pdfUrl!.isNotEmpty) {
                       const SizedBox(height: 6),
                       Divider(color: Colors.white.withOpacity(0.10), height: 1),
 
-                      // Personnel: only Recipient Name + Issuer
-                      if (doc.isPersonnel) ...[
+                      if (doc.isAccess) ...[
+                        _InfoRow(
+                          label: 'Card Holder',
+                          value: doc.holderName,
+                        ),
+                        _InfoRow(
+                          label: 'Card Type',
+                          value: doc.documentName,
+                        ),
+                        _InfoRow(
+                          label: 'Issuer',
+                          value: doc.documentIssuer,
+                        ),
+                      ] else if (doc.isPersonnel) ...[
                         _InfoRow(
                           label: 'Recipient Name',
                           value: doc.holderName,
@@ -644,87 +710,89 @@ if (widget.pdfUrl != null && widget.pdfUrl!.isNotEmpty) {
 
                 const SizedBox(height: 12),
 
-                // — Primary action: Send to PCFC (helper text inside) — //
-                SizedBox(
-                  height: 68,
-                  child: ElevatedButton(
-                    onPressed: (_attesting || _attested)
-                        ? null
-                        : _sendToPcfcForAttestation,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF2F6FEB),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                // — Primary action: Send to PCFC (only for non-access docs) — //
+                if (!doc.isAccess) ...[
+                  SizedBox(
+                    height: 68,
+                    child: ElevatedButton(
+                      onPressed: (_attesting || _attested)
+                          ? null
+                          : _sendToPcfcForAttestation,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2F6FEB),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.asset(
+                              'assets/brand/pcfc_logo.webp',
+                              width: 28,
+                              height: 28,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: DefaultTextStyle.merge(
+                              style: const TextStyle(height: 1.1),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _attested
+                                        ? 'Sent to PCFC for Attestation'
+                                        : _attesting
+                                            ? 'Sending to PCFC for Attestation…'
+                                            : 'Send to PCFC for Attestation',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  const Text(
+                                    'Attest document now',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFFE9F0FF),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          if (_attesting) const SizedBox(width: 12),
+                          if (_attesting)
+                            const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
-                    child: Row(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.asset(
-                            'assets/brand/pcfc_logo.webp',
-                            width: 28,
-                            height: 28,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: DefaultTextStyle.merge(
-                            style: const TextStyle(height: 1.1),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  _attested
-                                      ? 'Sent to PCFC for Attestation'
-                                      : _attesting
-                                          ? 'Sending to PCFC for Attestation…'
-                                          : 'Send to PCFC for Attestation',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                const Text(
-                                  'Attest document now',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFFE9F0FF),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        if (_attesting) const SizedBox(width: 12),
-                        if (_attesting)
-                          const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor:
-                                  AlwaysStoppedAnimation<Color>(Colors.white),
-                            ),
-                          ),
-                      ],
-                    ),
                   ),
-                ),
+                  const SizedBox(height: 10),
+                ],
 
-                const SizedBox(height: 10),
-
-                // Secondary: Share
+                // Secondary: Share (always)
                 SizedBox(
                   height: 54,
                   child: FilledButton.icon(
@@ -742,22 +810,23 @@ if (widget.pdfUrl != null && widget.pdfUrl!.isNotEmpty) {
                 ),
                 const SizedBox(height: 10),
 
-                // Secondary: Download
-                SizedBox(
-                  height: 54,
-                  child: FilledButton.icon(
-                    onPressed: () => _openShareQr(widget.shareLink),
-                    icon: const Icon(Icons.file_download),
-                    label: const Text('Download Credential'),
-                    style: FilledButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      backgroundColor: Colors.white.withOpacity(0.14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                // Secondary: Download (hide for access cards)
+                if (!doc.isAccess)
+                  SizedBox(
+                    height: 54,
+                    child: FilledButton.icon(
+                      onPressed: () => _openShareQr(widget.shareLink),
+                      icon: const Icon(Icons.file_download),
+                      label: const Text('Download Credential'),
+                      style: FilledButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        backgroundColor: Colors.white.withOpacity(0.14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                     ),
                   ),
-                ),
               ],
             ),
           );
@@ -828,6 +897,7 @@ class _DocData {
   final String documentType;
   final String recipientEmail;
   final bool isPersonnel;
+  final bool isAccess;
   final double? pageAspect; // width / height of first page
   final PdfController? pdf;
 
@@ -842,6 +912,7 @@ class _DocData {
     required this.documentType,
     required this.recipientEmail,
     required this.isPersonnel,
+    required this.isAccess,
     required this.pageAspect,
     required this.pdf,
   });

@@ -20,6 +20,7 @@ class _CategoriesListPageState extends State<CategoriesListPage> {
 
   int? _businessDocsCount;
   int? _personnelDocsCount;
+  int? _accessDocsCount;
 
   static const _bearerToken =
       'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiJhMDQ0N2NmZC00ZmFkLTRlMDctYTAwMS0wNmUxMDU2ZWMzOWMiLCJqdGkiOiJlZTk1YzUxZTJjYTBmOGFkODAxMjg5YzQ3OTA1MGE1YzdmOTc4ZWM5MmYxNzRiOWRlMzkyYWU4NGY0NTdlZTRiMmU3MTYxZDRlZjlmOTg5NiIsImlhdCI6MTc2MjMzNTYwOC4yNTc4NTcsIm5iZiI6MTc2MjMzNTYwOC4yNTc4NjEsImV4cCI6MTc5Mzg3MTYwOC4yNDQ4Mywic3ViIjoiIiwic2NvcGVzIjpbInJ1bi13b3JrZmxvdyIsIndlYmNvbXBvbmVudC12ZXJpZmljYXRpb24iLCJ2ZXJpZmljYXRpb24tc3VpdGUiLCJ3b3JrZmxvd3M6cmVhZCIsIndvcmtmbG93LXJ1bnM6cmVhZCIsImRvY3VtZW50czpyZWFkIiwiZG9jdW1lbnRzOndyaXRlIiwiY3VzdG9tLXZpZXdzOnJlYWQiLCJ1c2VyczpyZWFkIiwiZGVzaWduLXRlbXBsYXRlczpyZWFkIiwiZG9jdW1lbnQtdGVtcGxhdGVzOnJlYWQiLCJncm91cHM6cmVhZCIsImNvdXJzZXM6cmVhZCIsImNvdXJzZXM6d3JpdGUiXX0.YOQACJ_J8A8RN7G_UJUtJaDIvbmPkLfc_RTzsnkbdqZxWzEA4Y9IZsTBZbEXmLkeWErGOM60R-_yBF0n9jNlVLQVDpmlf2DnGzK5G9lTZUO48Y_VwDnA4qbr52Gc2HIueTmBEZBrl_-5Hg-hIhdlcRmnVxsUmCPM8s_2RpM9M_0-dPt1_C1UrJ9Ce0eicRdH7S03od4cPgWx9HMoTg3olElRnhA0kehcZA_FXkZGxBL7ybE1lJ9wUUKp2Aszb-VLV0MtLqtEZrZhiTObESOdCSdQWWmMSySXw_UnaMDei1rMlhORNYvejXyb7QCOG7QvJJA-dJ16VYeT3EkQ11G681NGYV1JoCubZwrncX-2tCaVTaLFG65PKVL7ncGwjtms_vnJ7eBowA9lIbTYMfScZX76kub5mW2JQNWEvwR9-M9jJnfXmACAwioVk4Ag1-58a2hxuog3NDmjDai1_cKBz_zlULQCDq5_QxIskO1fNyS_9p9Dwj_cihFtL2ovec8H6vxZ9_MOlUUe9tJ4H94MWpRXOPKm79OMsbJPC2SiZ3AH4PWQdpqlkK5Q9SQHuldPgs-mD-7XcA1Gf394UFuqjmEVcWz-ecHfVHDXchFAPSGDBD4zt6AiSKodkISbm0xMeFvi3dLmpWM4BtZUsu3_gGM9ZKg7MsdObOBL9dcw2-0';
@@ -28,37 +29,45 @@ class _CategoriesListPageState extends State<CategoriesListPage> {
   void initState() {
     super.initState();
     _repo = makeCategoriesRepo();
-    _future = _loadAll(); // load categories + both doc counts together
+    _future = _loadAll(); // load categories + all doc counts together
   }
 
   Future<List<Category>> _loadAll() async {
     // 1. Load categories
     final categories = await _repo.listFor(IdentityContext.current);
 
-    // 2. Load Business docs meta.total (email identifier)
+    // 2. Load Business docs meta.total
     _businessDocsCount = await _fetchDocsCountForEmail(
-      'demo_ali%40business.com',
+      'demo_ali@business.com',
     );
 
-    // 3. Load Personnel docs meta.total (email identifier)
+    // 3. Load Personnel docs meta.total
     _personnelDocsCount = await _fetchDocsCountForEmail(
-      'demo_ali%40personnel.com',
+      'demo_ali@personnel.com',
     );
 
-    // FutureBuilder will rebuild when this future completes
+    // 4. Load Access docs meta.total
+    _accessDocsCount = await _fetchDocsCountForEmail(
+      'demo_ali@access.com',
+    );
+
     return categories;
   }
 
-  Future<int?> _fetchDocsCountForEmail(String encodedEmail) async {
+  Future<int?> _fetchDocsCountForEmail(String email) async {
     try {
-      final uri = Uri.parse(
-        'https://nexus.uat.accredify.io/api/v1/documents/by_recipient'
-        '?identifier_type=email&identifier_value=$encodedEmail',
+      final uri = Uri.https(
+        'nexus.uat.accredify.io',
+        '/api/v1/documents/by_recipient',
+        {
+          'identifier_type': 'email',
+          'identifier_value': email,
+        },
       );
 
       final res = await http.get(
         uri,
-        headers: const {
+        headers: {
           'Accept': 'application/json',
           'Authorization': _bearerToken,
         },
@@ -93,6 +102,7 @@ class _CategoriesListPageState extends State<CategoriesListPage> {
             // - categories
             // - business docs meta.total
             // - personnel docs meta.total
+            // - access docs meta.total
             return const Center(child: CircularProgressIndicator());
           }
           if (s.hasError) return Center(child: Text('Failed: ${s.error}'));
@@ -113,13 +123,17 @@ class _CategoriesListPageState extends State<CategoriesListPage> {
                   id.contains('business') || name.contains('business');
               final isPersonnel =
                   id.contains('personnel') || name.contains('personnel');
+              final isAccess =
+                  id.contains('access') || name.contains('access') || id.contains('pass');
 
-              // For business + personnel categories, override count with their respective meta.total
+              // Override counts for nexus-backed categories
               final int? count;
               if (isBusiness) {
                 count = _businessDocsCount ?? 0;
               } else if (isPersonnel) {
                 count = _personnelDocsCount ?? 0;
+              } else if (isAccess) {
+                count = _accessDocsCount ?? 0;
               } else {
                 count = c.count;
               }
