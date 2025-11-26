@@ -41,8 +41,7 @@ class _CategoriesListPageState extends State<CategoriesListPage> {
   Future<int?> _fetchBusinessDocsCount() async {
     try {
       final uri = Uri.parse(
-        'https://nexus.uat.accredify.io/api/v1/documents/by_recipient'
-        '?identifier_type=email&identifier_value=test%40business.com',
+        'https://nexus.uat.accredify.io/api/v1/documents/by_recipient?identifier_type=email&identifier_value=demo_ali%40business.com',
       );
 
       final res = await http.get(

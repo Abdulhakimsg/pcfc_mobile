@@ -29,7 +29,7 @@ class _HomePageState extends State<HomePage> {
     setState(() => _loadingDocuments = true);
     try {
       final uri = Uri.parse(
-        'https://nexus.uat.accredify.io/api/v1/documents/by_recipient?identifier_value=Test%20Ali&identifier_type=name',
+        'https://nexus.uat.accredify.io/api/v1/documents/by_recipient?identifier_value=M%20Ali&identifier_type=name',
       );
 
       final res = await http.get(
@@ -56,10 +56,10 @@ class _HomePageState extends State<HomePage> {
           });
         }
       } else {
-        // Optional: log or handle non-200 status
+        // handle non-200 if needed
       }
     } catch (_) {
-      // Optional: log the error
+      // handle error if needed
     } finally {
       if (mounted) {
         setState(() => _loadingDocuments = false);
@@ -67,13 +67,35 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  void _openDocuments() {
+    Navigator.of(context)
+        .push(
+      MaterialPageRoute(
+        builder: (_) => const CategoriesListPage(),
+      ),
+    )
+        .then((_) {
+      // re-check every time we come back from documents
+      _fetchDocumentsCount();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    // spinner first: full-screen loader on initial fetch
+    if (_loadingDocuments && _documentsCount == null) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF0B1E34),
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
     final pages = [
       _HomeContent(
-        // Only source of truth is meta.total from the endpoint
-        documentsCount:
-            _documentsCount?.toString() ?? (_loadingDocuments ? '...' : '0'),
+        documentsCount: _documentsCount?.toString() ?? '0',
+        onViewDocuments: _openDocuments,
       ),
       const Center(child: Text('Payments')),
       const Center(child: Text('History')),
@@ -89,8 +111,6 @@ class _HomePageState extends State<HomePage> {
           SafeArea(child: IndexedStack(index: _index, children: pages)),
         ],
       ),
-
-      // --- Native M3 NavigationBar with square gold icon highlight, Home only clickable ---
       bottomNavigationBar: NavigationBarTheme(
         data: NavigationBarThemeData(
           indicatorColor: Colors.transparent,
@@ -200,7 +220,12 @@ class _BackgroundGradient extends StatelessWidget {
 /// ===== HOME CONTENT =====
 class _HomeContent extends StatelessWidget {
   final String documentsCount;
-  const _HomeContent({required this.documentsCount});
+  final VoidCallback onViewDocuments;
+
+  const _HomeContent({
+    required this.documentsCount,
+    required this.onViewDocuments,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -221,13 +246,7 @@ class _HomeContent extends StatelessWidget {
             icon: CupertinoIcons.plus_circled,
             title: 'View Documents',
             subtitle: 'View all official documents issued to you',
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const CategoriesListPage(),
-                ),
-              );
-            },
+            onTap: onViewDocuments,
           ),
           const SizedBox(height: AppTheme.gL),
           _ActionTile(
@@ -351,7 +370,7 @@ class _IdentityHeaderCard extends StatelessWidget {
                 ),
                 const SizedBox(height: AppTheme.gM),
                 const Text(
-                  'MOHAMMAD ALI',
+                  'MOHAMMED ALI',
                   style: TextStyle(
                     fontSize: 26,
                     fontWeight: FontWeight.w800,

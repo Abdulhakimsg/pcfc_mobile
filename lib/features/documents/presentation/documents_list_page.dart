@@ -148,8 +148,7 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
     try {
       // 1. Call /documents/by_recipient
       final uri = Uri.parse(
-        'https://nexus.uat.accredify.io/api/v1/documents/by_recipient'
-        '?identifier_type=email&identifier_value=test%40business.com',
+        'https://nexus.uat.accredify.io/api/v1/documents/by_recipient?identifier_type=email&identifier_value=demo_ali%40business.com',
       );
 
       final res = await http.get(
