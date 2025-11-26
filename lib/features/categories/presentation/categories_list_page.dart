@@ -7,7 +7,6 @@ import '../../../core/identity/identity.dart';
 import '../data/models.dart';
 import '../data/repo.dart';
 import '../../documents/presentation/documents_list_page.dart';
-import '../../documents/presentation/commercial_license_mock_page.dart';
 
 class CategoriesListPage extends StatefulWidget {
   const CategoriesListPage({super.key});

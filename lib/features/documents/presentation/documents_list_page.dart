@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 import '../../../core/identity/identity.dart';
 import '../data/models.dart';
 import '../data/repo.dart';
-import '../presentation/commercial_license_mock_page.dart';
+import '../presentation/document_page.dart';
 
 class DocumentsListPage extends StatefulWidget {
   final String categoryId;
@@ -25,11 +25,12 @@ class DocumentsListPage extends StatefulWidget {
 /// UI model we use in this page only
 class _UiDocument {
   final String id;
-  final String title;   // from RAW JSON -> document_name
-  final String issuer;  // from RAW JSON -> document_issuer
+  final String title;      // e.g. "Commercial License"
+  final String issuer;     // e.g. "Trakhees"
   final bool valid;
-  final String? rawUrl; // URL where label == 'raw'
-  final String? pdfUrl; // optional, label == 'pdf' / 'presentation'
+  final String? rawUrl;    // file.label == "raw"
+  final String? pdfUrl;    // file.label == "presentation" / "pdf"
+  final String? shareLink; // top-level share_link from Nexus
 
   _UiDocument({
     required this.id,
@@ -38,6 +39,7 @@ class _UiDocument {
     required this.valid,
     this.rawUrl,
     this.pdfUrl,
+    this.shareLink,
   });
 }
 
@@ -58,9 +60,22 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
     _future = _loadDocuments();
   }
 
+  /// Simple Title Case helper: "commercial license" -> "Commercial License"
+  String _toTitleCase(String input) {
+    if (input.isEmpty) return input;
+    return input
+        .toLowerCase()
+        .split(RegExp(r'\s+'))
+        .map((word) {
+          if (word.isEmpty) return word;
+          return word[0].toUpperCase() + word.substring(1);
+        })
+        .join(' ');
+  }
+
   Future<List<_UiDocument>> _loadDocuments() {
     if (_isBusinessCategory) {
-      // Business docs: fetch from Nexus via email identifier + follow raw URL
+      // Business docs: fetch from Nexus via email identifier + follow RAW
       return _fetchBusinessDocumentsFromNexus();
     } else {
       // Other categories: use existing repo
@@ -77,9 +92,12 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
     return docs
         .map((d) => _UiDocument(
               id: d.id,
-              title: d.title,
-              issuer: d.issuer,
+              title: _toTitleCase(d.title),
+              issuer: _toTitleCase(d.issuer),
               valid: d.valid,
+              rawUrl: null,
+              pdfUrl: null,
+              shareLink: null,
             ))
         .toList();
   }
@@ -89,7 +107,6 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
   String? _extractTitleFromRaw(dynamic raw) {
     if (raw is! Map<String, dynamic>) return null;
 
-    // 🔹 Prefer document_name from your example
     if (raw['document_name'] is String) {
       return raw['document_name'] as String;
     }
@@ -112,7 +129,6 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
   String? _extractIssuerFromRaw(dynamic raw) {
     if (raw is! Map<String, dynamic>) return null;
 
-    // 🔹 Prefer document_issuer from your example
     if (raw['document_issuer'] is String) {
       return raw['document_issuer'] as String;
     }
@@ -156,13 +172,13 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
 
       final results = <_UiDocument>[];
 
-      // 2. Iterate through `data` and follow file.label == 'raw'
       for (final item in data) {
         if (item is! Map<String, dynamic>) continue;
 
         final uuid = item['uuid']?.toString() ?? '';
         final status = item['status']?.toString();
         final valid = status == 'issued';
+        final shareLink = item['share_link']?.toString();
 
         String? rawUrl;
         String? pdfUrl;
@@ -175,9 +191,10 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
             final url = f['url']?.toString();
             if (url == null || url.isEmpty) continue;
 
-            if (label == 'raw') {
+            if (label == 'raw' && rawUrl == null) {
               rawUrl = url;
-            } else if (label == 'pdf' || label == 'presentation') {
+            } else if ((label == 'presentation' || label == 'pdf') &&
+                pdfUrl == null) {
               pdfUrl = url;
             }
           }
@@ -186,33 +203,31 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
         String title = 'Document';
         String issuer = 'Unknown issuer';
 
-        // 3. If we have a RAW URL, call it and decode JSON
+        // Use RAW JSON to extract document_name & document_issuer
         if (rawUrl != null) {
           try {
             final rawRes = await http.get(Uri.parse(rawUrl));
             if (rawRes.statusCode == 200) {
               final rawJson = jsonDecode(rawRes.body);
 
-              final extractedTitle = _extractTitleFromRaw(rawJson);
-              final extractedIssuer = _extractIssuerFromRaw(rawJson);
+              dynamic raw = rawJson;
+              if (rawJson is Map<String, dynamic> && rawJson['data'] != null) {
+                raw = rawJson['data'];
+              }
 
-              if (extractedTitle != null && extractedTitle.isNotEmpty) {
-                title = extractedTitle; // e.g. "commercial license"
-              }
-              if (extractedIssuer != null && extractedIssuer.isNotEmpty) {
-                issuer = extractedIssuer; // e.g. "trakhees"
-              }
+              final t = _extractTitleFromRaw(raw);
+              final i = _extractIssuerFromRaw(raw);
+
+              if (t != null && t.isNotEmpty) title = t;
+              if (i != null && i.isNotEmpty) issuer = i;
             }
           } catch (_) {
-            // swallow for now, keep defaults
-          }
-        } else {
-          // If no RAW, fall back to recipient name just to show something
-          final recipient = item['recipient'];
-          if (recipient is Map<String, dynamic>) {
-            issuer = recipient['name']?.toString() ?? issuer;
+            // keep defaults
           }
         }
+
+        title = _toTitleCase(title);   // "Commercial License"
+        issuer = _toTitleCase(issuer); // "Trakhees"
 
         results.add(
           _UiDocument(
@@ -222,6 +237,7 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
             valid: valid,
             rawUrl: rawUrl,
             pdfUrl: pdfUrl,
+            shareLink: shareLink,
           ),
         );
       }
@@ -240,16 +256,23 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
   }
 
   Future<void> _open(_UiDocument d) async {
-    final title = d.title.toLowerCase();
-
-    // keep your demo rule if you like
-    if (d.id == 'doc-1' || title.contains('commercial')) {
+    // For Business category, open the detailed document page
+    if (_isBusinessCategory) {
       Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const CommercialLicenseMockPage()),
+        MaterialPageRoute(
+          builder: (_) => DocumentPage(
+            displayTitle: d.title,
+            issuer: d.issuer,
+            shareLink: d.shareLink ?? '',
+            rawUrl: d.rawUrl,
+            pdfUrl: d.pdfUrl,
+          ),
+        ),
       );
       return;
     }
 
+    // Default for other categories (for now)
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Tapped: ${d.title} — ${d.issuer}')),
     );
@@ -287,11 +310,11 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
                 final d = items[i];
                 return ListTile(
                   title: Text(
-                    d.title, // <- "commercial license"
+                    d.title, // "Commercial License"
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                   subtitle: Text(
-                    d.issuer, // <- "trakhees"
+                    d.issuer, // "Trakhees"
                   ),
                   trailing: Icon(
                     d.valid ? Icons.verified : Icons.error_outline,
