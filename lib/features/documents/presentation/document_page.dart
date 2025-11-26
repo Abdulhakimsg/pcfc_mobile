@@ -4,10 +4,15 @@
 //
 // This version:
 // - Uses rawUrl + pdfUrl from parent (DocumentsListPage)
-// - Parses RAW JSON to fill company / holder / license info
-// - Reads document_issuer & document_name dynamically
-// - Switches issuer logo based on document_issuer (Trakhees / JAFZA / default PCFC)
-// - Renders the PDF from pdfUrl
+// - Parses RAW JSON to fill fields for both Business & Personnel docs
+// - For Personnel docs (document_type == "Personnel"):
+//   * issuer = additionalData.document_issuer ("Maersk Training")
+//   * holder = recipient.name ("M Ali")
+//   * Important Details only shows Recipient Name + Issuer
+// - For Business docs, keeps your existing behaviour
+// - Switches issuer logo based on document_issuer (Trakhees / JAFZA / Maersk / default PCFC)
+// - Renders the PDF from pdfUrl and sizes the card using the PDF page aspect ratio
+//   so landscape certificates don’t leave extra vertical whitespace.
 
 import 'dart:convert';
 import 'dart:math' as math;
@@ -18,8 +23,8 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:http/http.dart' as http;
 
 class DocumentPage extends StatefulWidget {
-  final String displayTitle; // e.g. "Commercial License"
-  final String issuer;       // e.g. "Trakhees" (fallback)
+  final String displayTitle; // e.g. "Commercial License" / "Safety Training Level 1"
+  final String issuer; // fallback issuer
   final String shareLink;
   final String? rawUrl;
   final String? pdfUrl;
@@ -76,11 +81,14 @@ class _DocumentPageState extends State<DocumentPage> {
   }
 
   /// Map issuer name -> logo asset path.
-  /// Adjust these paths to match your project structure.
   String _issuerLogoAsset(String issuerName) {
     final n = issuerName.toLowerCase().trim();
+
+    if (n.contains('maersk')) {
+      // Maersk Training logo
+      return 'assets/brand/maersk_logo.jpg';
+    }
     if (n.contains('jafza')) {
-      // <- put your JAFZA logo here
       return 'assets/brand/jafza_logo.png';
     }
     if (n.contains('trakhees')) {
@@ -100,6 +108,10 @@ class _DocumentPageState extends State<DocumentPage> {
 
     String documentIssuer = '';
     String documentName = '';
+    String documentType = '';
+    String recipientEmail = '';
+
+    double? pageAspect; // width / height of first PDF page
 
     // 1) Read RAW JSON if provided
     if (widget.rawUrl != null && widget.rawUrl!.isNotEmpty) {
@@ -118,38 +130,76 @@ class _DocumentPageState extends State<DocumentPage> {
           }
 
           if (dataMap != null) {
+            // additionalData (Personnel / custom fields)
+            final additional = dataMap['additionalData'];
+            if (additional is Map<String, dynamic>) {
+              final dt = additional['document_type'];
+              final dn = additional['document_name'];
+              final di = additional['document_issuer'];
+
+              if (dt is String && dt.isNotEmpty) {
+                documentType = _untag(dt);
+              }
+              if (dn is String && dn.isNotEmpty) {
+                documentName = _untag(dn);
+              }
+              if (di is String && di.isNotEmpty) {
+                documentIssuer = _untag(di);
+              }
+            }
+
+            // Company (business docs)
             companyName = _untag(
-                  dataMap['company_name'] ??
-                      dataMap['business_name'] ??
-                      '',
-                ) ??
-                '';
-            holderName = _untag(
-                  dataMap['name'] ??
-                      (dataMap['recipient'] is Map
-                          ? (dataMap['recipient'] as Map)['name']
-                          : null),
-                ) ??
-                '';
+              dataMap['company_name'] ?? dataMap['business_name'] ?? '',
+            );
 
-            licenseCategory = _untag(dataMap['license_category']) ?? '';
-            legalType = _untag(dataMap['legal_type']) ?? '';
+            // Recipient (for Personnel docs we want this as holder)
+            final recipient = dataMap['recipient'];
+            if (recipient is Map<String, dynamic>) {
+              final rn = recipient['name'];
+              final re = recipient['email'];
+              if (rn != null) {
+                holderName = _untag(rn);
+              }
+              if (re != null) {
+                recipientEmail = _untag(re);
+              }
+            }
 
+            // If still no holder name, fall back to other fields
+            if (holderName.isEmpty) {
+              final candidateHolder = dataMap['holder_name'] ?? dataMap['name'];
+              holderName = _untag(candidateHolder);
+            }
+
+            // Business-specific fields
+            licenseCategory = _untag(dataMap['license_category']);
+            legalType = _untag(dataMap['legal_type']);
             if (dataMap['member_role'] != null) {
               memberRole = _untag(dataMap['member_role']);
             }
 
-            // NEW: live document issuer / name
-            documentIssuer = _untag(dataMap['document_issuer']);
-            documentName = _untag(dataMap['document_name']);
+            // document_issuer & document_name from top-level if not set
+            if (documentIssuer.isEmpty && dataMap['document_issuer'] != null) {
+              documentIssuer = _untag(dataMap['document_issuer']);
+            }
+            if (documentName.isEmpty && dataMap['document_name'] != null) {
+              documentName = _untag(dataMap['document_name']);
+            }
 
-            // Fallback issuer from issuers[0].name if document_issuer missing
+            // Fallback issuer from issuers[0].name if still missing
             if (documentIssuer.isEmpty && dataMap['issuers'] is List) {
               final issuers = dataMap['issuers'] as List;
               if (issuers.isNotEmpty && issuers.first is Map) {
-                documentIssuer =
-                    _untag((issuers.first as Map<String, dynamic>)['name']);
+                documentIssuer = _untag(
+                  (issuers.first as Map<String, dynamic>)['name'],
+                );
               }
+            }
+
+            // Final fallback for docName: top-level "name"
+            if (documentName.isEmpty && dataMap['name'] != null) {
+              documentName = _untag(dataMap['name']);
             }
           }
         }
@@ -158,40 +208,64 @@ class _DocumentPageState extends State<DocumentPage> {
       }
     }
 
-    // 2) Load the PDF from pdfUrl
-    PdfController? controller;
-    if (widget.pdfUrl != null && widget.pdfUrl!.isNotEmpty) {
+// 2) Load the PDF from pdfUrl and compute aspect ratio
+PdfController? controller;
+if (widget.pdfUrl != null && widget.pdfUrl!.isNotEmpty) {
+  try {
+    final pdfRes = await http.get(Uri.parse(widget.pdfUrl!));
+    if (pdfRes.statusCode == 200) {
+      // PdfController expects a Future<PdfDocument>
+      final docFuture = PdfDocument.openData(pdfRes.bodyBytes);
+
+      // Use the resolved document once to compute aspect ratio
       try {
-        final pdfRes = await http.get(Uri.parse(widget.pdfUrl!));
-        if (pdfRes.statusCode == 200) {
-          controller = PdfController(
-            document: PdfDocument.openData(pdfRes.bodyBytes),
-          );
+        final pdfDoc = await docFuture;
+        final firstPage = await pdfDoc.getPage(1);
+        final w = firstPage.width;
+        final h = firstPage.height;
+        if (w != null && h != null && h != 0) {
+          pageAspect = w / h; // width / height
         }
+        await firstPage.close();
       } catch (_) {
-        // ignore PDF error, show 'No PDF found'
+        // ignore, we'll fall back later
       }
+
+      // Pass the Future<PdfDocument> into the controller
+      controller = PdfController(document: docFuture);
     }
+  } catch (_) {
+    // ignore PDF error, show 'No PDF found'
+  }
+}
 
     _pdf = controller;
 
+    // Determine if this is a Personnel credential
+    final isPersonnel = documentType.toLowerCase().trim() == 'personnel';
+
     // Fallbacks / nice formatting
-    if (companyName.isEmpty) {
+    if (companyName.isEmpty && !isPersonnel) {
       companyName = 'Trakhees Licensee';
     }
+
     if (holderName.isEmpty) {
       holderName = 'Authorised Signatory';
     }
 
+    // Title-case the human-facing labels
     companyName = _toTitleCase(companyName);
     holderName = _toTitleCase(holderName);
     memberRole = _toTitleCase(memberRole);
+    licenseCategory = _toTitleCase(licenseCategory);
+    legalType = _toTitleCase(legalType);
     documentIssuer = documentIssuer.isEmpty
         ? _toTitleCase(widget.issuer)
         : _toTitleCase(documentIssuer);
     documentName = documentName.isEmpty
         ? _toTitleCase(widget.displayTitle)
         : _toTitleCase(documentName);
+    documentType = _toTitleCase(documentType);
 
     return _DocData(
       companyName: companyName,
@@ -201,6 +275,10 @@ class _DocumentPageState extends State<DocumentPage> {
       legalType: legalType,
       documentIssuer: documentIssuer,
       documentName: documentName,
+      documentType: documentType,
+      recipientEmail: recipientEmail,
+      isPersonnel: isPersonnel,
+      pageAspect: pageAspect,
       pdf: controller,
     );
   }
@@ -407,7 +485,7 @@ class _DocumentPageState extends State<DocumentPage> {
                     border: Border.all(color: Colors.white.withOpacity(0.08)),
                   ),
                   child: RichText(
-                    textAlign: TextAlign.center, // center the two lines
+                    textAlign: TextAlign.center,
                     text: TextSpan(
                       style: const TextStyle(
                         color: Colors.white,
@@ -428,11 +506,12 @@ class _DocumentPageState extends State<DocumentPage> {
                           style: TextStyle(fontWeight: FontWeight.w500),
                         ),
                         TextSpan(
-                          text: doc.companyName,
+                          text: doc.isPersonnel
+                              ? doc.holderName
+                              : doc.companyName,
                           style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                         const TextSpan(
-                          // line break after first sentence
                           text: '.\n\n',
                           style: TextStyle(fontWeight: FontWeight.w500),
                         ),
@@ -445,7 +524,8 @@ class _DocumentPageState extends State<DocumentPage> {
                           style: TextStyle(fontWeight: FontWeight.w500),
                         ),
                         TextSpan(
-                          text: doc.memberRole,
+                          text:
+                              doc.isPersonnel ? 'Recipient' : doc.memberRole,
                           style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                         const TextSpan(text: '.'),
@@ -476,19 +556,41 @@ class _DocumentPageState extends State<DocumentPage> {
                       ),
                       const SizedBox(height: 6),
                       Divider(color: Colors.white.withOpacity(0.10), height: 1),
-                      _InfoRow(label: 'Company', value: doc.companyName),
-                      _InfoRow(label: 'Recipient Name', value: doc.holderName),
-                      _InfoRow(label: 'Role in Company', value: doc.memberRole),
-                      if (doc.licenseCategory.isNotEmpty)
+
+                      // Personnel: only Recipient Name + Issuer
+                      if (doc.isPersonnel) ...[
                         _InfoRow(
-                          label: 'License Category',
-                          value: doc.licenseCategory,
+                          label: 'Recipient Name',
+                          value: doc.holderName,
                         ),
-                      if (doc.legalType.isNotEmpty)
                         _InfoRow(
-                          label: 'Legal Type',
-                          value: doc.legalType,
+                          label: 'Issuer',
+                          value: doc.documentIssuer,
                         ),
+                      ] else ...[
+                        _InfoRow(
+                          label: 'Company',
+                          value: doc.companyName,
+                        ),
+                        _InfoRow(
+                          label: 'Recipient Name',
+                          value: doc.holderName,
+                        ),
+                        _InfoRow(
+                          label: 'Role in Company',
+                          value: doc.memberRole,
+                        ),
+                        if (doc.licenseCategory.isNotEmpty)
+                          _InfoRow(
+                            label: 'License Category',
+                            value: doc.licenseCategory,
+                          ),
+                        if (doc.legalType.isNotEmpty)
+                          _InfoRow(
+                            label: 'Legal Type',
+                            value: doc.legalType,
+                          ),
+                      ],
                       const SizedBox(height: 4),
                     ],
                   ),
@@ -506,22 +608,37 @@ class _DocumentPageState extends State<DocumentPage> {
                         color: Colors.black.withOpacity(.25),
                         blurRadius: 24,
                         offset: const Offset(0, 12),
-                      )
+                      ),
                     ],
                   ),
-                  height: 520,
                   clipBehavior: Clip.antiAlias,
                   child: doc.pdf == null
-                      ? const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(16),
-                            child: Text('No PDF found'),
+                      ? const SizedBox(
+                          height: 220,
+                          child: Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Text('No PDF found'),
+                            ),
                           ),
                         )
-                      : PdfView(
-                          controller: doc.pdf!,
-                          scrollDirection: Axis.vertical,
-                          pageSnapping: false,
+                      : LayoutBuilder(
+                          builder: (context, constraints) {
+                            // Fallback: A4 portrait ~ 1/1.414
+                            final aspect =
+                                doc.pageAspect ?? (1 / 1.41421356237);
+
+                            return Center(
+                              child: AspectRatio(
+                                aspectRatio: aspect,
+                                child: PdfView(
+                                  controller: doc.pdf!,
+                                  scrollDirection: Axis.vertical,
+                                  pageSnapping: false,
+                                ),
+                              ),
+                            );
+                          },
                         ),
                 ),
 
@@ -655,6 +772,7 @@ class _InfoRow extends StatelessWidget {
   final String label;
   final String value;
   const _InfoRow({required this.label, required this.value});
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -707,6 +825,10 @@ class _DocData {
   final String legalType;
   final String documentIssuer;
   final String documentName;
+  final String documentType;
+  final String recipientEmail;
+  final bool isPersonnel;
+  final double? pageAspect; // width / height of first page
   final PdfController? pdf;
 
   _DocData({
@@ -717,6 +839,10 @@ class _DocData {
     required this.legalType,
     required this.documentIssuer,
     required this.documentName,
+    required this.documentType,
+    required this.recipientEmail,
+    required this.isPersonnel,
+    required this.pageAspect,
     required this.pdf,
   });
 }

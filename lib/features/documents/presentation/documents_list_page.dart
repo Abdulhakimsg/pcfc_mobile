@@ -25,11 +25,11 @@ class DocumentsListPage extends StatefulWidget {
 /// UI model we use in this page only
 class _UiDocument {
   final String id;
-  final String title;      // e.g. "Commercial License"
-  final String issuer;     // e.g. "Trakhees"
+  final String title; // e.g. "Commercial License"
+  final String issuer; // e.g. "Trakhees" / "Maersk Training"
   final bool valid;
-  final String? rawUrl;    // file.label == "raw"
-  final String? pdfUrl;    // file.label == "presentation" / "pdf"
+  final String? rawUrl; // file.label == "raw"
+  final String? pdfUrl; // file.label == "presentation" / "pdf"
   final String? shareLink; // top-level share_link from Nexus
 
   _UiDocument({
@@ -47,10 +47,19 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
   late final DocumentsRepo _repo;
   late Future<List<_UiDocument>> _future;
 
+  static const _bearerToken =
+      'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiJhMDQ0N2NmZC00ZmFkLTRlMDctYTAwMS0wNmUxMDU2ZWMzOWMiLCJqdGkiOiJlZTk1YzUxZTJjYTBmOGFkODAxMjg5YzQ3OTA1MGE1YzdmOTc4ZWM5MmYxNzRiOWRlMzkyYWU4NGY0NTdlZTRiMmU3MTYxZDRlZjlmOTg5NiIsImlhdCI6MTc2MjMzNTYwOC4yNTc4NTcsIm5iZiI6MTc2MjMzNTYwOC4yNTc4NjEsImV4cCI6MTc5Mzg3MTYwOC4yNDQ4Mywic3ViIjoiIiwic2NvcGVzIjpbInJ1bi13b3JrZmxvdyIsIndlYmNvbXBvbmVudC12ZXJpZmljYXRpb24iLCJ2ZXJpZmljYXRpb24tc3VpdGUiLCJ3b3JrZmxvd3M6cmVhZCIsIndvcmtmbG93LXJ1bnM6cmVhZCIsImRvY3VtZW50czpyZWFkIiwiZG9jdW1lbnRzOndyaXRlIiwiY3VzdG9tLXZpZXdzOnJlYWQiLCJ1c2VyczpyZWFkIiwiZGVzaWduLXRlbXBsYXRlczpyZWFkIiwiZG9jdW1lbnQtdGVtcGxhdGVzOnJlYWQiLCJncm91cHM6cmVhZCIsImNvdXJzZXM6cmVhZCIsImNvdXJzZXM6d3JpdGUiXX0.YOQACJ_J8A8RN7G_UJUtJaDIvbmPkLfc_RTzsnkbdqZxWzEA4Y9IZsTBZbEXmLkeWErGOM60R-_yBF0n9jNlVLQVDpmlf2DnGzK5G9lTZUO48Y_VwDnA4qbr52Gc2HIueTmBEZBrl_-5Hg-hIhdlcRmnVxsUmCPM8s_2RpM9M_0-dPt1_C1UrJ9Ce0eicRdH7S03od4cPgWx9HMoTg3olElRnhA0kehcZA_FXkZGxBL7ybE1lJ9wUUKp2Aszb-VLV0MtLqtEZrZhiTObESOdCSdQWWmMSySXw_UnaMDei1rMlhORNYvejXyb7QCOG7QvJJA-dJ16VYeT3EkQ11G681NGYV1JoCubZwrncX-2tCaVTaLFG65PKVL7ncGwjtms_vnJ7eBowA9lIbTYMfScZX76kub5mW2JQNWEvwR9-M9jJnfXmACAwioVk4Ag1-58a2hxuog3NDmjDai1_cKBz_zlULQCDq5_QxIskO1fNyS_9p9Dwj_cihFtL2ovec8H6vxZ9_MOlUUe9tJ4H94MWpRXOPKm79OMsbJPC2SiZ3AH4PWQdpqlkK5Q9SQHuldPgs-mD-7XcA1Gf394UFuqjmEVcWz-ecHfVHDXchFAPSGDBD4zt6AiSKodkISbm0xMeFvi3dLmpWM4BtZUsu3_gGM9ZKg7MsdObOBL9dcw2-0';
+
   bool get _isBusinessCategory {
     final id = widget.categoryId.toLowerCase();
     final name = widget.categoryName.toLowerCase();
     return id.contains('business') || name.contains('business');
+  }
+
+  bool get _isPersonnelCategory {
+    final id = widget.categoryId.toLowerCase();
+    final name = widget.categoryName.toLowerCase();
+    return id.contains('personnel') || name.contains('personnel');
   }
 
   @override
@@ -75,8 +84,15 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
 
   Future<List<_UiDocument>> _loadDocuments() {
     if (_isBusinessCategory) {
-      // Business docs: fetch from Nexus via email identifier + follow RAW
-      return _fetchBusinessDocumentsFromNexus();
+      // Business docs: fetch from Nexus via business email identifier
+      return _fetchDocumentsFromNexus(
+        encodedEmail: 'demo_ali%40business.com',
+      );
+    } else if (_isPersonnelCategory) {
+      // Personnel docs: fetch from Nexus via personnel email identifier
+      return _fetchDocumentsFromNexus(
+        encodedEmail: 'demo_ali%40personnel.com',
+      );
     } else {
       // Other categories: use existing repo
       return _fetchFromRepo();
@@ -90,31 +106,46 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
     );
 
     return docs
-        .map((d) => _UiDocument(
-              id: d.id,
-              title: _toTitleCase(d.title),
-              issuer: _toTitleCase(d.issuer),
-              valid: d.valid,
-              rawUrl: null,
-              pdfUrl: null,
-              shareLink: null,
-            ))
+        .map(
+          (d) => _UiDocument(
+            id: d.id,
+            title: _toTitleCase(d.title),
+            issuer: _toTitleCase(d.issuer),
+            valid: d.valid,
+            rawUrl: null,
+            pdfUrl: null,
+            shareLink: null,
+          ),
+        )
         .toList();
   }
 
   /// Helper: extract document title from RAW JSON.
-  /// For your business docs, this should be "document_name": "commercial license"
+  /// For business/personnel docs this can be in:
+  /// - additionalData.document_name
+  /// - top-level document_name
+  /// - name/title
+  /// - credentialSubject.name/title
   String? _extractTitleFromRaw(dynamic raw) {
     if (raw is! Map<String, dynamic>) return null;
 
+    // 1) additionalData.document_name
+    final add = raw['additionalData'];
+    if (add is Map<String, dynamic>) {
+      final fromAdd = add['document_name'];
+      if (fromAdd is String && fromAdd.isNotEmpty) return fromAdd;
+    }
+
+    // 2) direct document_name
     if (raw['document_name'] is String) {
       return raw['document_name'] as String;
     }
 
-    // Fallbacks
+    // 3) generic
     if (raw['name'] is String) return raw['name'] as String;
     if (raw['title'] is String) return raw['title'] as String;
 
+    // 4) credentialSubject fallbacks
     final cs = raw['credentialSubject'];
     if (cs is Map<String, dynamic>) {
       if (cs['name'] is String) return cs['name'] as String;
@@ -125,38 +156,67 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
   }
 
   /// Helper: extract issuer name from RAW JSON.
-  /// For your business docs, this should be "document_issuer": "trakhees"
+  /// For your personnel sample:
+  /// additionalData.document_issuer = "Maersk Training"
   String? _extractIssuerFromRaw(dynamic raw) {
     if (raw is! Map<String, dynamic>) return null;
 
+    // 1) additionalData.document_issuer (preferred)
+    final add = raw['additionalData'];
+    if (add is Map<String, dynamic>) {
+      final fromAdd = add['document_issuer'];
+      if (fromAdd is String && fromAdd.isNotEmpty) {
+        return fromAdd;
+      }
+    }
+
+    // 2) direct document_issuer (business docs)
     if (raw['document_issuer'] is String) {
       return raw['document_issuer'] as String;
     }
 
-    // Fallback: typical OA issuer field
+    // 3) issuers[0].name
+    final issuers = raw['issuers'];
+    if (issuers is List && issuers.isNotEmpty) {
+      final first = issuers.first;
+      if (first is Map<String, dynamic>) {
+        final n = first['name'];
+        if (n is String && n.isNotEmpty) return n;
+      }
+    }
+
+    // 4) typical OA issuer field
     final issuer = raw['issuer'];
-    if (issuer is String) return issuer;
+    if (issuer is String && issuer.isNotEmpty) return issuer;
     if (issuer is Map<String, dynamic>) {
-      if (issuer['name'] is String) return issuer['name'] as String;
-      if (issuer['legalName'] is String) return issuer['legalName'] as String;
+      if (issuer['name'] is String && (issuer['name'] as String).isNotEmpty) {
+        return issuer['name'] as String;
+      }
+      if (issuer['legalName'] is String &&
+          (issuer['legalName'] as String).isNotEmpty) {
+        return issuer['legalName'] as String;
+      }
     }
 
     return null;
   }
 
-  Future<List<_UiDocument>> _fetchBusinessDocumentsFromNexus() async {
+  /// Core Nexus fetcher used for both Business & Personnel lists
+  Future<List<_UiDocument>> _fetchDocumentsFromNexus({
+    required String encodedEmail,
+  }) async {
     try {
       // 1. Call /documents/by_recipient
       final uri = Uri.parse(
-        'https://nexus.uat.accredify.io/api/v1/documents/by_recipient?identifier_type=email&identifier_value=demo_ali%40business.com',
+        'https://nexus.uat.accredify.io/api/v1/documents/by_recipient'
+        '?identifier_type=email&identifier_value=$encodedEmail',
       );
 
       final res = await http.get(
         uri,
-        headers: const {
+        headers: {
           'Accept': 'application/json',
-          'Authorization':
-              'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiJhMDQ0N2NmZC00ZmFkLTRlMDctYTAwMS0wNmUxMDU2ZWMzOWMiLCJqdGkiOiJlZTk1YzUxZTJjYTBmOGFkODAxMjg5YzQ3OTA1MGE1YzdmOTc4ZWM5MmYxNzRiOWRlMzkyYWU4NGY0NTdlZTRiMmU3MTYxZDRlZjlmOTg5NiIsImlhdCI6MTc2MjMzNTYwOC4yNTc4NTcsIm5iZiI6MTc2MjMzNTYwOC4yNTc4NjEsImV4cCI6MTc5Mzg3MTYwOC4yNDQ4Mywic3ViIjoiIiwic2NvcGVzIjpbInJ1bi13b3JrZmxvdyIsIndlYmNvbXBvbmVudC12ZXJpZmljYXRpb24iLCJ2ZXJpZmljYXRpb24tc3VpdGUiLCJ3b3JrZmxvd3M6cmVhZCIsIndvcmtmbG93LXJ1bnM6cmVhZCIsImRvY3VtZW50czpyZWFkIiwiZG9jdW1lbnRzOndyaXRlIiwiY3VzdG9tLXZpZXdzOnJlYWQiLCJ1c2VyczpyZWFkIiwiZGVzaWduLXRlbXBsYXRlczpyZWFkIiwiZG9jdW1lbnQtdGVtcGxhdGVzOnJlYWQiLCJncm91cHM6cmVhZCIsImNvdXJzZXM6cmVhZCIsImNvdXJzZXM6d3JpdGUiXX0.YOQACJ_J8A8RN7G_UJUtJaDIvbmPkLfc_RTzsnkbdqZxWzEA4Y9IZsTBZbEXmLkeWErGOM60R-_yBF0n9jNlVLQVDpmlf2DnGzK5G9lTZUO48Y_VwDnA4qbr52Gc2HIueTmBEZBrl_-5Hg-hIhdlcRmnVxsUmCPM8s_2RpM9M_0-dPt1_C1UrJ9Ce0eicRdH7S03od4cPgWx9HMoTg3olElRnhA0kehcZA_FXkZGxBL7ybE1lJ9wUUKp2Aszb-VLV0MtLqtEZrZhiTObESOdCSdQWWmMSySXw_UnaMDei1rMlhORNYvejXyb7QCOG7QvJJA-dJ16VYeT3EkQ11G681NGYV1JoCubZwrncX-2tCaVTaLFG65PKVL7ncGwjtms_vnJ7eBowA9lIbTYMfScZX76kub5mW2JQNWEvwR9-M9jJnfXmACAwioVk4Ag1-58a2hxuog3NDmjDai1_cKBz_zlULQCDq5_QxIskO1fNyS_9p9Dwj_cihFtL2ovec8H6vxZ9_MOlUUe9tJ4H94MWpRXOPKm79OMsbJPC2SiZ3AH4PWQdpqlkK5Q9SQHuldPgs-mD-7XcA1Gf394UFuqjmEVcWz-ecHfVHDXchFAPSGDBD4zt6AiSKodkISbm0xMeFvi3dLmpWM4BtZUsu3_gGM9ZKg7MsdObOBL9dcw2-0',
+          'Authorization': _bearerToken,
         },
       );
 
@@ -210,7 +270,8 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
               final rawJson = jsonDecode(rawRes.body);
 
               dynamic raw = rawJson;
-              if (rawJson is Map<String, dynamic> && rawJson['data'] != null) {
+              if (rawJson is Map<String, dynamic> &&
+                  rawJson['data'] != null) {
                 raw = rawJson['data'];
               }
 
@@ -225,8 +286,8 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
           }
         }
 
-        title = _toTitleCase(title);   // "Commercial License"
-        issuer = _toTitleCase(issuer); // "Trakhees"
+        title = _toTitleCase(title); // e.g. "Safety Training Level 1"
+        issuer = _toTitleCase(issuer); // e.g. "Maersk Training"
 
         results.add(
           _UiDocument(
@@ -255,8 +316,8 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
   }
 
   Future<void> _open(_UiDocument d) async {
-    // For Business category, open the detailed document page
-    if (_isBusinessCategory) {
+    // For Business and Personnel categories, open the detailed document page
+    if (_isBusinessCategory || _isPersonnelCategory) {
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => DocumentPage(
@@ -309,11 +370,11 @@ class _DocumentsListPageState extends State<DocumentsListPage> {
                 final d = items[i];
                 return ListTile(
                   title: Text(
-                    d.title, // "Commercial License"
+                    d.title, // e.g. "Safety Training Level 1"
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                   subtitle: Text(
-                    d.issuer, // "Trakhees"
+                    d.issuer, // e.g. "Maersk Training"
                   ),
                   trailing: Icon(
                     d.valid ? Icons.verified : Icons.error_outline,
